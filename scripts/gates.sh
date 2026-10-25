@@ -9,12 +9,19 @@ claude plugin validate . --strict
 claude plugin test .
 if [ -f .claude-plugin/types/tsconfig.json ]; then npx -y -p typescript@5.9.3 tsc -p .; fi
 sh scripts/privacy.sh
-# The gh hook must refuse a private link (built at run time, so the tree holds none) and pass a clean command.
+# The gh hook must refuse a private link (built at run time, so the tree holds none) in the text and in a posted
+# file however it is named, and pass a clean command.
 command -v jq >/dev/null || { echo "gates: jq is required, the privacy hook checks nothing without it" >&2; exit 1; }
-hook() { printf '{"tool_input":{"command":"gh %s"}}' "$1" | sh scripts/privacy-hook.sh 2>/dev/null; }
+hook() { jq -n -c --arg c "gh $1" '{tool_input: {command: $c}}' | sh scripts/privacy-hook.sh 2>/dev/null; }
 kind=code
-if hook "issue create --body claude.ai/$kind/x" || [ $? -ne 2 ]; then
-    echo "gates: privacy-hook.sh let a private link through" >&2
-    exit 1
-fi
+posted=$(mktemp)
+trap 'rm -f "$posted"' EXIT
+printf 'see claude.ai/%s/x\n' "$kind" > "$posted"
+for c in "issue create --body claude.ai/$kind/x" "issue create --body-file $posted" \
+    "issue create --body \"\$(cat \"$posted\")\"" "issue create --body-file - <\"$posted\""; do
+    if hook "$c" || [ $? -ne 2 ]; then
+        echo "gates: privacy-hook.sh let a private link through: gh $c" >&2
+        exit 1
+    fi
+done
 hook 'pr view 9' || { echo "gates: privacy-hook.sh refused a clean gh command" >&2; exit 1; }

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code PreToolUse hook for Bash (.claude/settings.json): refuses (exit 2) a gh command whose text, or a
-# file it names, fails `privacy.sh text`, before anything reaches GitHub. Commit messages are commit-msg's.
+# text file it names, fails `privacy.sh text`, before anything reaches GitHub. Commit messages are commit-msg's.
 here=$(cd "$(dirname "$0")" && pwd)
 command -v jq >/dev/null || { echo "privacy-hook: jq is missing, gh commands go unchecked" >&2; exit 0; }
 input=$(cat)
@@ -10,32 +10,29 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
 [ -n "$cwd" ] && cd "$cwd"
 status=0
 printf '%s\n' "$cmd" | sh "$here/privacy.sh" text || status=2
-# Any word naming a file is checked, so --body-file, -F, --input, field=@file, $(cat f), < f and pipes are all seen.
-# A word after a flag that posts a file must be readable, or the command is refused rather than passed unchecked.
-# ponytail: words split on blanks, so a path with spaces or one built from a variable is refused, never expanded.
+# A variable's value is not in the text, so what it would post cannot be checked.
+if printf '%s\n' "$cmd" | grep -q -E '\$[A-Za-z_{]'; then
+    echo "privacy: a gh command with a shell variable cannot be checked; write the value or path plainly" >&2
+    status=2
+fi
+# Every path-like run of characters is a candidate, whatever quotes, $( ), <, @ or --flag= surround it, looked up
+# from the session's folder and from any folder the command cds into. Binary files (gh itself) are not posted text;
+# the three scripts that spell out the refused patterns are skipped, as privacy.sh skips them in the tree.
+top=$(dirname "$here")
 set -f
+dirs=.
 prev=
-for t in $cmd; do
-    f=$t
-    posts=
-    case $prev in --body-file | -F | --input | --notes-file) posts=1 ;; esac
-    case $f in
-    --body-file=* | --input=* | --notes-file=*) f=${f#*=} posts=1 ;;
-    *=@*) f=${f#*=@} posts=1 ;;
-    *=*) posts= ;; # a gh api field (-F key=value), not a file
-    esac
+for t in $(printf '%s\n' "$cmd" | grep -o -E '[[:alnum:]_./~+-]+'); do
+    [ "$prev" = cd ] && dirs="$dirs $t"
     prev=$t
-    f=${f#[\"\']}
-    f=${f%[\"\']}
-    f=${f%)}
-    f=${f#[<@]}
-    case $f in "~/"*) f=$HOME/${f#"~/"} ;; esac
-    case $f in - | /dev/stdin) continue ;; esac
-    if [ -f "$f" ]; then
+    case $t in "~/"*) t=$HOME/${t#"~/"} ;; esac
+    case $t in /*) paths=$t ;; *) paths=$(for d in $dirs; do printf '%s\n' "$d/$t"; done) ;; esac
+    for f in $paths; do
+        [ -f "$f" ] && grep -q -I . "$f" || continue
+        case $(cd "$(dirname "$f")" && pwd)/${f##*/} in
+        "$top/scripts/privacy.sh" | "$top/scripts/pr-check.sh" | "$top/.githooks/commit-msg") continue ;;
+        esac
         sh "$here/privacy.sh" text < "$f" || { echo "privacy: in $f" >&2; status=2; }
-    elif [ -n "$posts" ]; then
-        echo "privacy: cannot read the posted file $f, so it cannot be checked; name it by a plain path" >&2
-        status=2
-    fi
+    done
 done
 exit $status

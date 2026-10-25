@@ -1,6 +1,6 @@
 #!/bin/sh
-# Branches listed in .git/info/local-branches (one name per line) stay on this machine, and the messages of
-# commits no remote holds yet pass `privacy.sh text`, however they reached the branch being pushed.
+# Branches listed in .git/info/local-branches (one name per line) stay on this machine, under any name, and the
+# messages of commits no remote holds yet pass `privacy.sh text`, however they reached the branch being pushed.
 list="$(git rev-parse --git-common-dir)/info/local-branches"
 privacy="$(git rev-parse --show-toplevel)/scripts/privacy.sh"
 while read -r local_ref local_sha _ _; do
@@ -11,6 +11,18 @@ while read -r local_ref local_sha _ _; do
     fi
     # A deleted ref arrives as all zeros and pushes no commits.
     case $local_sha in *[!0]*) ;; *) continue ;; esac
+    # Under another name (git push origin HEAD:x, or a branch cut from one) a local branch's own commits still
+    # stay: those no remote holds may not be in what is pushed.
+    if [ -s "$list" ]; then
+        for branch in $(cat "$list"); do
+            for c in $(git rev-list "refs/heads/$branch" --not --remotes 2>/dev/null); do
+                if git merge-base --is-ancestor "$c" "$local_sha"; then
+                    echo "hitodama: $local_ref carries $c from $branch, which is listed in $list and never pushed" >&2
+                    exit 1
+                fi
+            done
+        done
+    fi
     if ! git log --format=%B "$local_sha" --not --remotes | sh "$privacy" text; then
         echo "hitodama: a commit message pushed to $local_ref holds what privacy.sh refuses; reword it" >&2
         exit 1
