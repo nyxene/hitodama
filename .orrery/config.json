@@ -1,0 +1,11 @@
+{
+  "tracker": "github",
+  "outputLanguage": "Русский",
+  "qualityGates": "scripts/gates.sh",
+  "branchFlow": "Branch type/<issue>-slug from main for an issue labelled accepted; pull request with Closes #N; squash-only, the title a Conventional Commits subject; release-please cuts releases.",
+  "debtLabels": {
+    "type": "debt",
+    "scope": ["scope:pet", "scope:ui", "scope:i18n", "scope:docs"],
+    "priority": ["priority:p1", "priority:p2", "priority:p3"]
+  }
+}
