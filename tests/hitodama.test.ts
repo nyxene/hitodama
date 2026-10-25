@@ -1,10 +1,11 @@
-import { expect, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
+import { expect, test, type Engine } from 'claude-code/testing'
 
 import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
-import { act, advance, isHistory, isPet, newEgg, step, type Pet } from '../hooks/sim'
+import { act, advance, finishGame, isHistory, isPet, newEgg, step, type Pet } from '../hooks/sim'
 import { cells, scene } from '../hooks/sprites'
-import { decide, statsText, title, type Ctx, type Win } from '../hooks/view'
+import { bar, decide, limitOf, statsText, title, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
 const T0 = Date.UTC(2026, 9, 24, 12) // noon UTC
@@ -169,8 +170,13 @@ test('a run with nobody at the prompt leaves the pet alone', async ($, on) => {
   expect(asked).toBe(0)
 })
 
-test('a pet file cut off mid-write is left as it is, said once, and never replaced by an egg', async ($, on) => {
-  const writes: string[] = [], logs: string[] = []
+// A child that hatched an hour before the session's clock starts.
+const child = () => { const p = newEgg(T0 - 71 * MIN, 1, 'yokai'); advance(p, T0, utc); return p }
+
+// A session over a fake home folder: files maps a name under ~/.claude/hitodama to its content.
+// Each /hd runs one tick, three seconds after the last; a failing one is said after three in a row.
+async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean } = {}) {
+  const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, logs: string[] = []
   let now = T0
   on('clock.now', () => ({ value: (now += 3000) }))
   on('clock.every', () => ({ value: undefined }))
@@ -180,18 +186,164 @@ test('a pet file cut off mid-write is left as it is, said once, and never replac
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/h' : undefined }))
   on('process.run', () => ({ value: { stdout: '+0000\n', stderr: '', exitCode: 0, isStdoutTruncated: false, isStderrTruncated: false } }))
   on('session.repo', () => ({ value: null }))
-  on('fs.exists', () => ({ value: true }))
-  on('fs.read', (_, e) => ({ value: e.path.endsWith('pet.json') ? '{"v":1,"life":' : 'null' }))
-  on('fs.list', () => ({ value: [] }))
-  on('fs.write', (_, e) => { writes.push(e.path); return { value: undefined } })
+  on('fs.exists', (_, e) => ({ value: e.path.slice(dir.length) in files }))
+  on('fs.read', (_, e) => ({ value: files[e.path.slice(dir.length)] ?? 'null' }))
+  on('fs.list', () => {
+    if (opts.listFails) throw new Error('listing failed')
+    return { value: Object.keys(files).filter(n => n.startsWith('seen/')).map(n => ({ name: n.slice(5), kind: 'file', size: 1, mtimeMs: now, isLink: false })) }
+  })
+  on('fs.write', (_, e) => { writes[e.path.slice(dir.length)] = e.text; return { value: undefined } })
   on('ui.log', (_, e) => { logs.push(e.text); return { value: undefined } })
   on('command.register', () => ({ value: { command: 'hd' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
-  // Each /hd runs a tick: five failed ticks, one line about the file.
   const hd = { command: 'hd', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
-  for (let i = 0; i < 5; i++) await $.command.run(hd)
-  expect(writes.filter(p => p.endsWith('pet.json'))).toEqual([])
-  expect(logs.filter(l => l.includes('pet.json')).length).toBe(1)
+  return { files, writes, logs, hd: () => $.command.run(hd) }
+}
+
+test('a pet file cut off mid-write is left as it is, said once, and never replaced by an egg', async ($, on) => {
+  const s = await session($, on, { 'pet.json': '{"v":1,"life":' })
+  for (let i = 0; i < 5; i++) await s.hd()
+  expect(s.writes['pet.json']).toBeUndefined()
+  expect(s.logs.filter(l => l.includes('pet.json')).length).toBe(1)
+})
+
+test('the pane shows the pet the session has read', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.hd()
+  const ui = await $.ui.mount({
+    plugin: 'hitodama', surface: 'terminal', component: 'Pane', requestId: 'hitodama',
+    props: { title: 'Hitodama', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+  })
+  expect((await ui.find({ type: 'Text', text: /Sunekosuri/ }))?.text).toContain(tr().stage.child)
+  expect(await ui.find({ key: 'b-eat' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the last events of a window that has just closed still reach the pet', async ($, on) => {
+  const closed: Win = { ...win, sid: 's2', alive: 0, seq: 1, events: [{ seq: 1, k: 'agent' }] }
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()), 'seen/s2.json': JSON.stringify(closed) })
+  await s.hd()
+  const saved = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
+  expect(saved.stats.agents).toBe(1)
+  expect(saved.applied.s2).toBe(1)
+})
+
+test('a call or tantrum open when Claude closes gets its full 15 minutes after reopening', () => {
+  const p = egg()
+  advance(p, T0 + 70 * MIN, utc)
+  p.sat = 10
+  p.nextTantrum = p.at + 1000
+  advance(p, p.at + 3000, utc)
+  expect(p.call?.reason).toBe('hungry')
+  expect(p.tantrum).not.toBeNull()
+  advance(p, p.at + 3 * HOUR, utc) // in the pocket
+  for (let i = 1; i <= 14; i++) advance(p, p.at + MIN, utc)
+  expect(p.cm).toBe(0)
+  expect(p.dm).toBe(0)
+  for (let i = 1; i <= 2; i++) advance(p, p.at + MIN, utc)
+  expect(p.cm).toBe(1)
+  expect(p.dm).toBe(1)
+})
+
+test('asleep it calls only for the light or when sick, so a hungry night costs no care mistake', () => {
+  const p = egg()
+  liveWell(p, T0, Date.UTC(2026, 9, 24, 20, 30))
+  expect(p.asleep).toBe(true)
+  p.sat = 20; p.joy = 20
+  for (let i = 1; i <= 60; i++) step(p, p.at + i * MIN, MIN, 21, false)
+  expect(p.call).toBeNull()
+  expect(p.cm).toBe(0)
+  p.lightsOff = false
+  step(p, p.at + 61 * MIN, MIN, 21, false)
+  expect(p.call?.reason).toBe('light')
+})
+
+test('an adult that comes out on waking stays up until its own bedtime and ages one day', () => {
+  for (const [teen, cm, adult] of [['kitsune', 3, 'kappa'], ['tanuki', 8, 'nuppeppo']] as const) {
+    const p = egg()
+    Object.assign(p, { ch: teen, path: ['hitodama', 'sunekosuri', teen], hatchAt: T0, ageDays: 5, asleep: true, lightsOff: true, cm, sat: 100, joy: 100 })
+    const from = Date.UTC(2026, 9, 25, 8, 58)
+    for (let i = 1; i <= 3 * 60; i++) step(p, from + i * MIN, MIN, utc(from + i * MIN), false)
+    expect(p.ch).toBe(adult)
+    expect(p.asleep).toBe(false)
+    expect(p.ageDays).toBe(6)
+  }
+})
+
+test('a five-hour limit whose reset has passed is not shown', () => {
+  const now = T0
+  const at = (ms: number) => new Date(now + ms).toISOString()
+  expect(limitOf([{ ...win, limit5: 100, limitResetsAt: at(-MIN) }, { ...win, limit5: 40, limitResetsAt: at(HOUR) }], now)).toEqual({ limit5: 40, limitResetsAt: at(HOUR) })
+  expect(limitOf([{ ...win, limit5: 100, limitResetsAt: at(-MIN) }], now).limit5).toBe(0)
+})
+
+test('every label keeps a space before its value in every language', () => {
+  const p = egg()
+  advance(p, T0 + 70 * MIN, utc)
+  for (const l of LANGS) {
+    setLang(l)
+    const rows = statsText(p, { lives: [], seen: [] }, p.at).split('\n')
+    // A label stuck to its number reads as a letter followed by a digit.
+    for (const r of rows.slice(3, 11)) expect(r).not.toMatch(/\p{L}\d/u)
+    for (const label of Object.values(tr().bars)) expect(bar(label, 50).startsWith(label + ' ')).toBe(true)
+  }
+  setLang('en')
+})
+
+test('a game finished after the pet fell asleep, sickened or died changes nothing', () => {
+  const p = egg()
+  advance(p, T0 + 70 * MIN, utc)
+  for (const change of [{ asleep: true }, { sick: true }, { dead: { at: p.at, cause: 'old' } }, { ch: 'egg' }]) {
+    const q: Pet = { ...structuredClone(p), ...change }
+    expect(finishGame(q, 5)).toBeNull()
+    expect(q.stats.games).toBe(0)
+  }
+  expect(finishGame(p, 5)).toBe(tr().gameWin(5, 15))
+})
+
+test('an egg laid in the evening sleeps through its first night and wakes a day older', () => {
+  const p = newEgg(Date.UTC(2026, 9, 24, 20, 30), 1, 'yokai')
+  let asleepMin = 0
+  for (let t = p.at; t < Date.UTC(2026, 9, 25, 9, 30); t += MIN) { step(p, t + MIN, MIN, utc(t + MIN), false); if (p.asleep) asleepMin += 1 }
+  expect(p.ch).toBe('sunekosuri')
+  expect(asleepMin).toBeGreaterThan(10 * 60)
+  expect(p.ageDays).toBe(1)
+})
+
+test('a pet asleep on an empty stomach wakes hungry, not dead', () => {
+  const p = egg()
+  liveWell(p, T0, Date.UTC(2026, 9, 24, 20, 30))
+  p.sat = 0
+  for (let t = p.at; t < Date.UTC(2026, 9, 25, 9, 1); t += MIN) step(p, t + MIN, MIN, utc(t + MIN), false)
+  expect(p.dead).toBeNull()
+  expect(p.call?.reason).toBe('hungry')
+})
+
+test('a game left open ends once the pet falls ill, and the care buttons come back', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.hd()
+  const mount = () => $.ui.mount({
+    plugin: 'hitodama', surface: 'terminal', component: 'Pane', requestId: 'hitodama',
+    props: { title: 'Hitodama', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+  })
+  let ui = await mount()
+  await ui.press({ key: 'b-game' })
+  await ui.unmount()
+  ui = await mount()
+  expect(await ui.find({ key: 'b-left' })).toBeDefined()
+  await ui.unmount()
+  s.files['pet.json'] = JSON.stringify({ ...JSON.parse(s.writes['pet.json']!), sick: true })
+  await s.hd()
+  ui = await mount()
+  expect(await ui.find({ key: 'b-left' })).toBeUndefined()
+  expect(await ui.find({ key: 'b-eat' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a tick that cannot list the windows forgets none of them', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify({ ...child(), applied: { s2: 5 } }) }, { listFails: true })
+  await s.hd()
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).applied.s2).toBe(5)
 })

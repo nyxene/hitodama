@@ -1,5 +1,5 @@
 // What to show: state by priority, the title, the bars and the stats text.
-import { lang, pad, t as tr } from './i18n'
+import { lang, pad, t as tr, width } from './i18n'
 import { LINES, lineOf, lineName } from './lines'
 import { causeText, nameOf, stageOf, type Ev, type History, type Pet } from './sim'
 import { tuning as T } from './tuning'
@@ -16,6 +16,16 @@ export type Ctx = {
 }
 
 const EFF: Record<string, string> = { low: 'think_low', medium: 'think_med', high: 'think_high', xhigh: 'think_high', max: 'think_max' }
+
+// Pads to n columns, and always leaves one space after a label longer than that.
+const col = (s: string, n: number) => pad(s, Math.max(n, width(s) + 1))
+
+// The five-hour limit to show: the fullest window whose reset has not passed (an idle window keeps an old figure).
+export function limitOf(wins: Win[], now: number): { limit5: number; limitResetsAt?: string } {
+  const live = wins.filter(w => !w.limitResetsAt || !(Date.parse(w.limitResetsAt) <= now))
+  const top = [...live].sort((a, b) => b.limit5 - a.limit5)[0]
+  return { limit5: top?.limit5 ?? 0, limitResetsAt: top?.limitResetsAt }
+}
 
 function left(ms: number) {
   const m = Math.max(0, Math.round(ms / 60_000))
@@ -74,7 +84,7 @@ export function title(p: Pet, now: number): string {
 
 export function bar(label: string, v: number, tag = ''): string {
   const n = Math.max(0, Math.min(10, Math.round(v / 10)))
-  return `${pad(label, 11)}${'█'.repeat(n)}${'░'.repeat(10 - n)} ${String(Math.round(v)).padStart(3)}${tag ? '  ' + tag : ''}`
+  return `${col(label, 11)}${'█'.repeat(n)}${'░'.repeat(10 - n)} ${String(Math.round(v)).padStart(3)}${tag ? '  ' + tag : ''}`
 }
 
 const fmtDate = (t: number) => new Date(t).toLocaleDateString(lang(), { day: 'numeric', month: 'short' })
@@ -86,7 +96,7 @@ export function statsText(p: Pet, h: History, now: number): string {
   const model = top(s.models), effort = top(s.efforts)
   const num = (v: number) => v.toLocaleString(lang())
   // Two label-value pairs per row; widths count terminal columns.
-  const row = (a: string, av: string, b?: string, bv?: string) => (pad(a, 17) + (b ? pad(av, 8) + pad(b, 19) + bv : av)).trimEnd()
+  const row = (a: string, av: string, b?: string, bv?: string) => (col(a, 17) + (b ? col(av, 8) + col(b, 19) + bv : av)).trimEnd()
   const lines = [
     `${nameOf(p.ch).toUpperCase()} · ${lineName(lineOf(p.line))} · ${L.life(p.life)} · ${p.dead ? L.dead_ : L.stage[stageOf(p)]} · ${age(p, now)}`,
     p.path.length ? p.path.map(nameOf).join(' → ') : L.inEggYet,
