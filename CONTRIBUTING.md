@@ -33,7 +33,7 @@ scripts/setup.sh
 claude --plugin-dir .
 ```
 
-`setup.sh` enables the git hooks. Before every commit they run `scripts/gates.sh`: `claude plugin validate --strict`, `claude plugin test`, and `scripts/privacy.sh`, plus a type check once Claude Code has laid its types in `.claude-plugin/types`. Those types appear the first time a session loads the mod with `--plugin-dir .`; until then `tsconfig.json` points at a missing file and the editor says so. CI runs the same gates without the type check. A session started with `--plugin-dir .` reloads the mod whenever you save a file.
+`setup.sh` copies the git hooks from main into `.git/hooks`; rerun it when `.githooks` changes on main. A hook path into the tree would run whatever hooks a checked-out branch carries. The hooks still run the checked-out branch's `scripts/gates.sh` and tests, so read a contributor's changes to `scripts/`, `.githooks/` and `tests/` before committing on their branch. Before every commit the hooks run `scripts/gates.sh`: `claude plugin validate --strict`, `claude plugin test`, and `scripts/privacy.sh`, plus a type check once Claude Code has laid its types in `.claude-plugin/types`. Those types appear the first time a session loads the mod with `--plugin-dir .`; until then `tsconfig.json` points at a missing file and the editor says so. CI runs the same gates without the type check. A session started with `--plugin-dir .` reloads the mod whenever you save a file.
 
 Pet data lives in `~/.claude/hitodama/`. Delete `pet.json` there to start over with a new egg.
 
