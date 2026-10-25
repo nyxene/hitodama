@@ -22,14 +22,11 @@ jobs:
           persist-credentials: false
 
       # Mods need Claude Code 2.1.287 or newer; validate and test run offline, no login.
-      - name: Validate and test
+      # gates.sh: validate, test, the privacy check and its hook (jq ships with the runner); no types here.
+      - name: Gates
         run: |
           npm install -g @anthropic-ai/claude-code@2.1.310
-          claude plugin validate . --strict
-          claude plugin test .
-
-      - name: Privacy check
-        run: sh scripts/privacy.sh
+          sh scripts/gates.sh
 
       # Title and body through env, never ${{ }} inside run: pull request text is attacker-controlled.
       - name: Names an issue, conventional title

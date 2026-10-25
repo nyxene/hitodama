@@ -24,7 +24,7 @@ Out of scope, and closed:
 
 ## Development setup
 
-Requires Claude Code 2.1.287 or newer, and [Bun](https://bun.sh) only to redraw the images (`bun scripts/art.ts` writes the icon and `assets/yokai.png` from the sprite code).
+Requires Claude Code 2.1.287 or newer, [jq](https://jqlang.org) to commit (the privacy hook and its gate need it), and [Bun](https://bun.sh) only to redraw the images (`bun scripts/art.ts` writes the icon and `assets/yokai.png` from the sprite code).
 
 ```sh
 git clone https://github.com/nyxene/hitodama.git
@@ -33,7 +33,7 @@ scripts/setup.sh
 claude --plugin-dir .
 ```
 
-`setup.sh` copies the git hooks from main into `.git/hooks`; rerun it when `.githooks` changes on main. A hook path into the tree would run whatever hooks a checked-out branch carries. The hooks still run the checked-out branch's `scripts/gates.sh` and tests, so read a contributor's changes to `scripts/`, `.githooks/` and `tests/` before committing on their branch. Before every commit the hooks run `scripts/gates.sh`: `claude plugin validate --strict`, `claude plugin test`, and `scripts/privacy.sh`, plus a type check once Claude Code has laid its types in `.claude-plugin/types`. Those types appear the first time a session loads the mod with `--plugin-dir .`; until then `tsconfig.json` points at a missing file and the editor says so. CI runs the same gates without the type check. A session started with `--plugin-dir .` reloads the mod whenever you save a file.
+`setup.sh` copies the git hooks from main into `.git/hooks`; rerun it when `.githooks` changes on main. A hook path into the tree would run whatever hooks a checked-out branch carries. The hooks still run the checked-out branch's `scripts/gates.sh` and tests, so read a contributor's changes to `scripts/`, `.githooks/` and `tests/` before committing on their branch. Before every commit the hooks run `scripts/gates.sh`: `claude plugin validate --strict`, `claude plugin test`, `scripts/privacy.sh`, and a check that the privacy hook fires, plus a type check once Claude Code has laid its types in `.claude-plugin/types`. Those types appear the first time a session loads the mod with `--plugin-dir .`; until then `tsconfig.json` points at a missing file and the editor says so. CI runs the same gates without the type check. A session started with `--plugin-dir .` reloads the mod whenever you save a file.
 
 Pet data lives in `~/.claude/hitodama/`. Delete `pet.json` there to start over with a new egg.
 
@@ -42,7 +42,7 @@ Pet data lives in `~/.claude/hitodama/`. Delete `pet.json` there to start over w
 - One pull request per issue, from a branch named `type/<issue>-slug`, for example `fix/12-sleep-call`.
 - The pull request title is a [Conventional Commits](https://www.conventionalcommits.org/) subject (`feat:`, `fix:`, `docs:` and so on) that states the result, for example `fix: the pet no longer calls while asleep`. It is squash-merged, so the title becomes the commit and the changelog line.
 - The body starts with `Closes #N`, then says what changed and how it was tested.
-- No links to private AI sessions or pages in commits or pull requests.
+- No links to private AI sessions or pages in commits or pull requests. `commit-msg` refuses them in commit messages and `pre-push` in any commit a push would publish; in a Claude Code session, `scripts/privacy-hook.sh` (set in `.claude/settings.json`) refuses a `gh` command whose text, or a text file it names, holds one, and a `gh` command with a shell variable, whose value it cannot see. It guards against posting by mistake: the output of a command piped or substituted into `gh`, and file names with spaces, quotes or globs, go unchecked.
 
 ## Releases
 
