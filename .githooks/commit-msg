@@ -9,8 +9,9 @@ if ! printf '%s\n' "$subject" | grep -Eq "$regex"; then
     echo "          got:   $subject" >&2
     exit 1
 fi
-# What git keeps: comments and the diff below a `git commit -v` scissors line are not part of the message.
-message=$(sed '/^# -\{24\} >8 -\{24\}$/,$d' "$1" | git stripspace --strip-comments)
+# The diff below a `git commit -v` scissors line is never kept. Comment lines are checked too: `-m` and `-F` keep
+# them (a Markdown heading is one), and git's own template comments hold nothing these checks refuse.
+message=$(sed '/^# -\{24\} >8 -\{24\}$/,$d' "$1")
 # A private Claude link points at a conversation or page nobody else can open.
 if printf '%s\n' "$message" | grep -q -E '^Claude-Session:|claude\.ai/(code|artifact|chat|share|project)'; then
     echo "hitodama: remove the private Claude link (and any Claude-Session line) from the commit message" >&2

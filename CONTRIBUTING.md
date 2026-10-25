@@ -42,7 +42,7 @@ Pet data lives in `~/.claude/hitodama/`. Delete `pet.json` there to start over w
 - One pull request per issue, from a branch named `type/<issue>-slug`, for example `fix/12-sleep-call`.
 - The pull request title is a [Conventional Commits](https://www.conventionalcommits.org/) subject (`feat:`, `fix:`, `docs:` and so on) that states the result, for example `fix: the pet no longer calls while asleep`. It is squash-merged, so the title becomes the commit and the changelog line.
 - The body starts with `Closes #N`, then says what changed and how it was tested.
-- No links to private AI sessions or pages in commits or pull requests. `commit-msg` refuses them in commit messages and `pre-push` in any commit a push would publish; in a Claude Code session, `scripts/privacy-hook.sh` (set in `.claude/settings.json`) refuses a `gh` command whose text, or a text file it names, holds one, and a `gh` command with a shell variable, whose value it cannot see.
+- No links to private AI sessions or pages in commits or pull requests. `commit-msg` refuses them in commit messages and `pre-push` in any commit a push would publish; in a Claude Code session, `scripts/privacy-hook.sh` (set in `.claude/settings.json`) refuses a `gh` command whose text, or a text file it names, holds one, and a `gh` command with a shell variable, whose value it cannot see. It guards against posting by mistake: the output of a command piped or substituted into `gh`, and file names with spaces, quotes or globs, go unchecked.
 
 ## Releases
 

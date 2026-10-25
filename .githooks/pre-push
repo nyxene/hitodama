@@ -11,16 +11,22 @@ while read -r local_ref local_sha _ _; do
     fi
     # A deleted ref arrives as all zeros and pushes no commits.
     case $local_sha in *[!0]*) ;; *) continue ;; esac
-    # Under another name (git push origin HEAD:x, or a branch cut from one) a local branch's own commits still
-    # stay: those no remote holds may not be in what is pushed.
+    # Under another name (git push origin HEAD:x, or a branch cut from one) a local branch's commits still stay:
+    # none that no remote holds may be in what is pushed. A commit the local branch shares with the pushed one
+    # (the local branch was cut from it) counts too; rebase the local branch onto main once the other is merged.
     if [ -s "$list" ]; then
+        if [ -z "$(git for-each-ref --count=1 refs/remotes)" ]; then
+            echo "hitodama: no remote-tracking branches, so local-only commits cannot be told apart; git fetch first" >&2
+            exit 1
+        fi
         for branch in $(cat "$list"); do
-            for c in $(git rev-list "refs/heads/$branch" --not --remotes 2>/dev/null); do
-                if git merge-base --is-ancestor "$c" "$local_sha"; then
-                    echo "hitodama: $local_ref carries $c from $branch, which is listed in $list and never pushed" >&2
-                    exit 1
-                fi
-            done
+            git rev-parse -q --verify "refs/heads/$branch" >/dev/null || continue
+            own=$(git rev-list --count "refs/heads/$branch" --not --remotes)
+            left=$(git rev-list --count "refs/heads/$branch" --not --remotes "$local_sha")
+            if [ "$left" -lt "$own" ]; then
+                echo "hitodama: $local_ref holds commits of $branch, which is listed in $list and never pushed" >&2
+                exit 1
+            fi
         done
     fi
     if ! git log --format=%B "$local_sha" --not --remotes | sh "$privacy" text; then

@@ -25,3 +25,8 @@ for c in "issue create --body claude.ai/$kind/x" "issue create --body-file $post
     fi
 done
 hook 'pr view 9' || { echo "gates: privacy-hook.sh refused a clean gh command" >&2; exit 1; }
+# commit-msg must refuse the same link, in a heading line that -m keeps, and pass a clean message.
+printf 'fix: x\n\n## Notes\n# see claude.ai/%s/x\n' "$kind" > "$posted"
+if sh .githooks/commit-msg "$posted" 2>/dev/null; then echo "gates: commit-msg let a private link through" >&2; exit 1; fi
+printf 'fix: x\n\n## Notes\n' > "$posted"
+sh .githooks/commit-msg "$posted" || { echo "gates: commit-msg refused a clean message" >&2; exit 1; }
