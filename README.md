@@ -70,8 +70,9 @@ Hitodama makes no network requests and sends nothing anywhere. What it touches:
 
 - **Files:** reads and writes only `~/.claude/hitodama/`: `pet.json` (the pet and its journal), `history.json` (past lives and seen characters) and `seen/<session>.json` (one small file per session, so sessions can tell who has the pet; mods cannot delete files, so old ones stay until you remove them).
 - **Session data:** the session id (to name its file), the name of the repository or working folder (shown in the pane and in your other sessions), the model name, effort level, context fill percentage, five-hour usage percentage and reset time, the number of reply tokens, helper and failed tool counts, aborted turns, compactions, and when you last typed. It never reads your prompts, replies, files or transcript.
-- **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either it does nothing.
-- **Processes:** runs `date +%z` once per session to learn your local UTC offset for bedtimes.
+- **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either, or when it is not an absolute path, it does nothing.
+- **Processes:** runs `date +%z` once per session (`/bin/date` or `/usr/bin/date`, the one on `PATH` only where neither exists) to learn your local UTC offset for bedtimes; without it, it takes the offset the runtime reports.
+- **Sessions:** only sessions with a person at the prompt take part; `claude -p` runs and the SDK leave the pet alone.
 - **Notifications:** when the pet calls, throws a tantrum or dies and you have not typed for a minute.
 
 `claude plugin validate` lists every call the mod makes, if you want to check.
@@ -79,6 +80,7 @@ Hitodama makes no network requests and sends nothing anywhere. What it touches:
 ## Limitations
 
 - Mods run with your permissions. Organizations that allow only managed mods will refuse Hitodama.
+- A damaged `pet.json` stops the pet, with one line in the transcript after three skipped ticks, instead of replacing it with an egg; fix the file or delete it to start over.
 - Switching the active session hands the pet over within one three-second tick; in rare cases the old session writes one more tick.
 - The interface translations other than English and Russian were written without a native speaker's review. Corrections are welcome as issues.
 
