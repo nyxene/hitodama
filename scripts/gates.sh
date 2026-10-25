@@ -10,6 +10,7 @@ claude plugin test .
 if [ -f .claude-plugin/types/tsconfig.json ]; then npx -y -p typescript@5.9.3 tsc -p .; fi
 sh scripts/privacy.sh
 # The gh hook must refuse a private link (built at run time, so the tree holds none) and pass a clean command.
+command -v jq >/dev/null || { echo "gates: jq is required, the privacy hook checks nothing without it" >&2; exit 1; }
 hook() { printf '{"tool_input":{"command":"gh %s"}}' "$1" | sh scripts/privacy-hook.sh 2>/dev/null; }
 kind=code
 if hook "issue create --body claude.ai/$kind/x" || [ $? -ne 2 ]; then

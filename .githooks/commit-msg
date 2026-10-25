@@ -9,16 +9,19 @@ if ! printf '%s\n' "$subject" | grep -Eq "$regex"; then
     echo "          got:   $subject" >&2
     exit 1
 fi
+# What git keeps: comments and the diff below a `git commit -v` scissors line are not part of the message.
+message=$(sed '/^# -\{24\} >8 -\{24\}$/,$d' "$1" | git stripspace --strip-comments)
 # A private Claude link points at a conversation or page nobody else can open.
-if grep -v '^#' "$1" | grep -q -E '^Claude-Session:|claude\.ai/(code|artifact|chat|share|project)'; then
+if printf '%s\n' "$message" | grep -q -E '^Claude-Session:|claude\.ai/(code|artifact|chat|share|project)'; then
     echo "hitodama: remove the private Claude link (and any Claude-Session line) from the commit message" >&2
     exit 1
 fi
-# The words listed in .git/info/private-words stay out of every branch that can be pushed.
+# The words listed in .git/info/private-words stay out of every branch that can be pushed; pre-push checks the
+# messages again, for commits that reach such a branch by cherry-pick, rebase or rename.
 list="$(git rev-parse --git-common-dir)/info/local-branches"
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
 [ -n "$branch" ] && [ -s "$list" ] && grep -q -x -F "$branch" "$list" && exit 0
-if ! grep -v '^#' "$1" | sh "$top/scripts/privacy.sh" text; then
+if ! printf '%s\n' "$message" | sh "$top/scripts/privacy.sh" text; then
     echo "hitodama: remove those words from the commit message" >&2
     exit 1
 fi
