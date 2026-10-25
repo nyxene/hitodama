@@ -1,7 +1,7 @@
 name: gates
 
 # The same gates .githooks/pre-commit runs, run again where nobody can forget to enable them:
-# core.hooksPath is local config, so a fresh clone has the hooks on disk and switched off.
+# a fresh clone has the hooks on disk and switched off until scripts/setup.sh copies them in.
 # The job name `gates` is what the main ruleset requires; renaming it means amending the ruleset too.
 on:
   push:
@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Mods need Claude Code 2.1.287 or newer; validate and test run offline, no login.
       - name: Validate and test
