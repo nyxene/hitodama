@@ -3,10 +3,10 @@ import type { Register } from 'claude-code'
 
 import type { HitodamaView } from '../types'
 import { setLang, t as tr, width } from './i18n'
-import { act, advance, applyEvent, bury, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
+import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, scene } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, decide, statsText, title, type Ctx, type Win } from './view'
+import { bar, decide, limitOf, statsText, title, type Ctx, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -28,11 +28,11 @@ export const register: Register = (on, options) => {
   let game: { wins: boolean[]; dir: number } | null = null
   let statsOpen = false
   let frame = 0
-  let scale = 1 // chosen by the render from the pane size; blit frames must match it
+  let scale = 1 // chosen by the terminal render from the pane size; blit frames must match it
   let shown = { scene: 'idle', night: false }
   // File work lives in the session.start closure: $ may not be passed to functions.
   let dir = '' // ~/.claude/hitodama, set on session start
-  let io: { tick: (action?: (p: Pet, now: number) => void) => Promise<void> } | null = null
+  let io: { tick: (action?: (p: Pet, now: number) => void) => Promise<void>; flush: () => Promise<void> } | null = null
 
   const push = (e: Ev extends infer E ? (E extends Ev ? Omit<E, 'seq'> : never) : never) => {
     win.seq += 1
@@ -64,6 +64,7 @@ export const register: Register = (on, options) => {
       game = null
       return io.tick((p, now) => {
         const msg = finishGame(p, wins)
+        if (msg === null) return
         note(p, now, tr().logGame(msg))
         anim = { id: wins >= 3 ? 'happy' : 'bored', until: now + 3000, msg }
       })
@@ -122,10 +123,9 @@ export const register: Register = (on, options) => {
     const refresh = async (now: number, isOwner: boolean, fresh: Win[], ownerRoom: string) => {
       const p = pet
       if (!p) return
-      const limit5 = Math.max(...fresh.map(w => w.limit5))
+      const { limit5, limitResetsAt } = limitOf(fresh, now)
       const ctx: Ctx = {
-        now, isOwner, ownerRoom, limit5, anim,
-        limitResetsAt: fresh.find(w => w.limitResetsAt)?.limitResetsAt,
+        now, isOwner, ownerRoom, limit5, limitResetsAt, anim,
         idleMin: (now - Math.max(...fresh.map(w => Math.max(w.lastActivity, w.lastInput)))) / 60_000,
       }
       const d = game && isOwner ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
@@ -162,12 +162,16 @@ export const register: Register = (on, options) => {
       await $.fs.write(seenPath(sid), JSON.stringify(win))
 
       // Mods cannot delete files, so old session files stay; only recently written ones are read.
-      const listed = (await $.fs.list(`${dir}/seen`).catch(() => [])).filter(f => f.name.endsWith('.json') && f.name !== `${sid}.json`)
+      // A listing that fails says nothing about who is gone: nothing is forgotten on that tick.
+      const listing = await $.fs.list(`${dir}/seen`).catch(() => null)
+      const listed = (listing ?? []).filter(f => f.name.endsWith('.json') && f.name !== `${sid}.json`)
       const recent = listed.filter(f => now - f.mtimeMs < T.presence.staleAfterMinutes * 60_000)
       // A window counts only under its own file name, and no later than now, so one file cannot claim the pet for good.
-      const others = (await Promise.all(recent.map(async f => ({ name: f.name, w: await readJson<Win>(`${dir}/seen/${f.name}`) }))))
-        .flatMap(({ name, w }) => w && typeof w.sid === 'string' && name === `${w.sid}.json` && now - w.alive < T.presence.staleAfterMinutes * 60_000
+      // A window that has just closed (alive 0) no longer counts, but its last events are still applied.
+      const written = (await Promise.all(recent.map(async f => ({ name: f.name, w: await readJson<Win>(`${dir}/seen/${f.name}`) }))))
+        .flatMap(({ name, w }) => w && typeof w.sid === 'string' && name === `${w.sid}.json`
           ? [{ ...w, lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
+      const others = written.filter(w => now - w.alive < T.presence.staleAfterMinutes * 60_000)
       const fresh = [win, ...others]
       const owner = [...fresh].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
       const isOwner = owner.sid === sid
@@ -176,15 +180,17 @@ export const register: Register = (on, options) => {
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
         advance(p, now, hourAt)
-        for (const w of fresh) for (const ev of w.events) {
+        for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
         }
         // Forget sessions gone for a day; one that comes back drops the events it kept (see session start).
-        for (const s of Object.keys(p.applied)) {
+        if (listing) for (const s of Object.keys(p.applied)) {
           const f = listed.find(f => f.name === `${s}.json`)
           if (s !== sid && (!f || now - f.mtimeMs > T.presence.forgetAfterDays * 86_400_000)) delete p.applied[s]
         }
         action?.(p, now)
+        // A game left open ends once the pet cannot play, so its state shows again.
+        if (game && !canPlay(p)) game = null
         // Notify only when you are not typing in any window.
         const quiet = now - Math.max(...fresh.map(w => w.lastInput)) > T.notify.quietMinutes * 60_000
         const notify = (text: string) => { if (quiet) void $.ui.notify(text, { title: NAME }).catch(() => {}) }
@@ -226,6 +232,7 @@ export const register: Register = (on, options) => {
         touch(await $.clock.now())
         return tick(action)
       },
+      flush: () => tick(),
     }
 
     await $.command.register({ name: 'hd', description: tr().command, argumentHint: '[stats]' })
@@ -240,6 +247,8 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
+    // The owner applies its own last events now; any other window's are picked up from its file by the next owner.
+    await io?.flush()
     win.alive = 0
     if (win.sid && dir) {
       await $.fs.write(`${dir}/seen/${win.sid}.json`, JSON.stringify(win)).catch(() => {})
@@ -324,7 +333,8 @@ export const register: Register = (on, options) => {
     const cols = e.props.bodyColumns, rows = e.props.scroll.bodyRows
     const isTerminal = e.surface === 'terminal'
     // Double-size screen when it fits the width and leaves room for text below.
-    scale = isTerminal && cols >= 32 * WIDE_SCALE && rows >= 12 * WIDE_SCALE + 14 ? WIDE_SCALE : 1
+    // Only the terminal draws the screen, so only its size sets the scale the animation frames are cut to.
+    if (isTerminal) scale = cols >= 32 * WIDE_SCALE && rows >= 12 * WIDE_SCALE + 14 ? WIDE_SCALE : 1
     let screen = <Text dimColor>{tr().terminalOnly}</Text>
     if (e.surface === 'terminal') {
       const { Raster } = $.ui.resolve(e)

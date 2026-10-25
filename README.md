@@ -52,9 +52,9 @@ Keys work while the pane has focus.
 
 During play, 1 and 2 guess left or right and 9 quits the game.
 
-A call left unanswered for 15 minutes is a care mistake; a tantrum left alone is a discipline mistake. Mistakes decide what it grows into, and the rules are in [docs/yokai.md](docs/yokai.md), with the folklore behind each character. Starve it for 12 hours, or let an illness run, and it dies; a new egg arrives a minute later.
+A call left unanswered for 15 minutes is a care mistake; a tantrum left alone is a discipline mistake. It falls asleep at its bedtime; asleep it calls only for the light or medicine, and hunger does not count towards starving. Mistakes decide what it grows into, and the rules are in [docs/yokai.md](docs/yokai.md), with the folklore behind each character. Starve it for 12 hours, or let an illness run, and it dies; a new egg arrives a minute later.
 
-While Claude Code is closed the pet is "in your pocket": its needs drop at a third of the speed, it makes no calls, and neither hunger nor illness can kill it, so a weekend away is safe. It will be hungry when you come back, and the 12 hours start then. With several sessions open, the pet stays in the one you typed in last, and the others show where it went.
+While Claude Code is closed the pet is "in your pocket": its needs drop at a third of the speed, it makes no calls (one already open gets its full 15 minutes again when you return), and neither hunger nor illness can kill it, so a weekend away is safe. It will be hungry when you come back, and the 12 hours start then. With several sessions open, the pet stays in the one you typed in last, and the others show where it went.
 
 ## Settings
 

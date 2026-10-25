@@ -29,6 +29,7 @@ export type Pet = {
   call: Call | null
   tantrum: { since: number } | null; nextTantrum: number
   evolvedAt: number
+  wokeAt?: number // when it last woke; absent in old saves
   dead: { at: number; cause: string } | null
   applied: Record<string, number> // last applied event number of each window
   stats: Stats
@@ -143,11 +144,13 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
     scheduleTantrum(p, t)
   }
 
-  // Sleep follows the schedule; a day of age is added on waking.
+  // Sleep follows the schedule; a day of age is added on waking. Within 12 hours of waking it falls asleep only at
+  // bedtime, so a form that comes out on waking with a later wake-up hour does not drop off again at once.
   const sleepy = isSleepHour(p.ch, hour)
-  if (sleepy && !p.asleep) p.asleep = true
+  if (sleepy && !p.asleep && (hour === CHARS[p.ch]?.sleep?.[0] || !(t - (p.wokeAt ?? 0) < 12 * HOUR))) p.asleep = true
   if (!sleepy && p.asleep) {
     p.asleep = false
+    p.wokeAt = t
     p.lightsOff = false
     p.ageDays += 1
     maybeGrow(p, t)
@@ -178,16 +181,23 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
     note(p, t, tr().logSick)
   }
 
-  p.starve = p.sat > 0 ? 0 : offline ? p.starve : p.starve + h
+  // Hunger counts towards starving only while it can be fed: not in the pocket, not asleep.
+  p.starve = p.sat > 0 ? 0 : offline || p.asleep ? p.starve : p.starve + h
   if (p.starve >= T.death.starveHours) return die(p, t, 'starve')
   if (p.hp <= 0) return die(p, t, 'sick')
   if (life !== undefined && p.ageDays >= life) return die(p, t, 'old')
 
-  if (offline) return
+  // In the pocket an open call or tantrum waits: its 15 minutes start again when Claude is back.
+  if (offline) {
+    if (p.call) p.call.since = t
+    if (p.tantrum) p.tantrum.since = t
+    return
+  }
 
-  // A call unanswered for 15 minutes is a care mistake.
-  const need: Call['reason'] | null =
-    p.sat < T.needs.hungry ? 'hungry' : p.joy < T.needs.sad ? 'sad' : p.sick ? 'sick' : p.asleep && !p.lightsOff ? 'light' : null
+  // A call unanswered for 15 minutes is a care mistake. Asleep it calls only for what can be done at night.
+  const need: Call['reason'] | null = p.asleep
+    ? (p.sick ? 'sick' : !p.lightsOff ? 'light' : null)
+    : p.sat < T.needs.hungry ? 'hungry' : p.joy < T.needs.sad ? 'sad' : p.sick ? 'sick' : null
   if (!need) p.call = null
   else if (!p.call || p.call.reason !== need) {
     p.call = { reason: need, since: t, missed: false }
@@ -309,8 +319,9 @@ export function act(p: Pet, a: Act, t: number): { anim: string; msg: string } {
   }
 }
 
-// Result of the left-or-right game: 5 rounds, 3 wins make it happy.
-export function finishGame(p: Pet, wins: number): string {
+// Result of the left-or-right game: 5 rounds, 3 wins make it happy. Null when the pet can no longer play.
+export function finishGame(p: Pet, wins: number): string | null {
+  if (!canPlay(p)) return null
   p.weight = Math.max(CHARS[p.ch]?.weight ?? 1, p.weight + T.weight.game)
   p.en = clamp(p.en + T.care.gameEnergy)
   p.stats.games += 1
@@ -320,6 +331,8 @@ export function finishGame(p: Pet, wins: number): string {
   }
   return tr().gameLose(wins)
 }
+
+export const canPlay = (p: Pet) => !p.dead && p.ch !== 'egg' && !p.asleep && !p.sick
 
 export function bury(p: Pet, h: History): History {
   const life: Life = {
