@@ -1,0 +1,12 @@
+#!/bin/sh
+# Branches listed in .git/info/local-branches (one name per line) stay on this machine.
+list="$(git rev-parse --git-common-dir)/info/local-branches"
+[ -s "$list" ] || exit 0
+while read -r local_ref _ _ _; do
+    name=${local_ref#refs/heads/}
+    if [ "$name" != "$local_ref" ] && grep -q -x -F "$name" "$list"; then
+        echo "hitodama: $name is listed in $list and is never pushed" >&2
+        exit 1
+    fi
+done
+exit 0

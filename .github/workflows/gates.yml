@@ -1,0 +1,38 @@
+name: gates
+
+# The same gates .githooks/pre-commit runs, run again where nobody can forget to enable them:
+# core.hooksPath is local config, so a fresh clone has the hooks on disk and switched off.
+# The job name `gates` is what the main ruleset requires; renaming it means amending the ruleset too.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Mods need Claude Code 2.1.287 or newer; validate and test run offline, no login.
+      - name: Validate and test
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.310
+          claude plugin validate . --strict
+          claude plugin test .
+
+      - name: Privacy check
+        run: sh scripts/privacy.sh
+
+      # Title and body through env, never ${{ }} inside run: pull request text is attacker-controlled.
+      - name: Names an issue, conventional title
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: sh scripts/pr-check.sh

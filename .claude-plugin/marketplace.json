@@ -1,0 +1,13 @@
+{
+  "name": "hitodama",
+  "description": "Hitodama, a pocket yokai for Claude Code",
+  "owner": { "name": "Evgeniy Kovrov", "url": "https://github.com/nyxene" },
+  "plugins": [
+    {
+      "name": "hitodama",
+      "source": "./",
+      "description": "A pocket yokai that lives in a pane beside the Claude Code chat and grows from how you work.",
+      "category": "fun"
+    }
+  ]
+}

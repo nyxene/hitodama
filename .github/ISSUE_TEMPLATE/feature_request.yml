@@ -1,0 +1,20 @@
+name: Feature request
+description: An idea for Hitodama
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Hitodama stays small, local and offline. New character lines must be public-domain folklore or original designs. Many ideas will be declined.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you would like the pet to do, and why.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+    validations:
+      required: true

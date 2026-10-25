@@ -1,0 +1,4 @@
+.DS_Store
+# Laid by Claude Code when it loads the mod; used only for local type-checking.
+/.claude-plugin/types/
+/.claude/settings.local.json

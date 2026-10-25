@@ -1,0 +1,21 @@
+{
+  "name": "hitodama",
+  "displayName": "Hitodama",
+  "version": "0.0.0",
+  "description": "A pocket yokai that lives in a pane beside the Claude Code chat and grows from how you work: context, effort, model, limits, helpers.",
+  "author": { "name": "Evgeniy Kovrov", "url": "https://github.com/nyxene" },
+  "homepage": "https://github.com/nyxene/hitodama",
+  "repository": "https://github.com/nyxene/hitodama",
+  "license": "MIT",
+  "keywords": ["virtual-pet", "yokai", "pixel-art", "pane", "mod"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Interface language: en English, ru Русский, zh 中文, ja 日本語, ko 한국어, es Español, pt Português, de Deutsch, fr Français.",
+      "options": ["en", "ru", "zh", "ja", "ko", "es", "pt", "de", "fr"],
+      "default": "en"
+    }
+  }
+}

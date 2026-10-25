@@ -1,0 +1,8 @@
+#!/bin/sh
+# GitHub's ruleset refuses the push anyway; this just saves moving the commit afterwards.
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ "$branch" = "main" ] && [ -z "$HITODAMA_ALLOW_MAIN" ]; then
+    echo "hitodama: no commits on main, use a branch and a pull request (HITODAMA_ALLOW_MAIN=1 overrides, once)" >&2
+    exit 1
+fi
+exec sh "$(git rev-parse --show-toplevel)/scripts/gates.sh"

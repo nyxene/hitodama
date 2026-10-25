@@ -1,0 +1,39 @@
+name: Bug report
+description: Something in Hitodama does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. /hd
+        2. press 1 to feed
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Hitodama and Claude Code versions
+      description: Hitodama's version from `/plugin`, and the output of `claude --version`.
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal and OS
+      placeholder: Ghostty 1.2 on macOS 26
+  - type: textarea
+    id: state
+    attributes:
+      label: Pet state (optional)
+      description: The contents of ~/.claude/hitodama/pet.json, if the bug is about the pet itself. It holds only the pet and its journal.
+      render: json
