@@ -1,4 +1,12 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "sh \"$CLAUDE_PROJECT_DIR/scripts/privacy-hook.sh\"" }]
+      }
+    ]
+  },
   "permissions": {
     "deny": [
       "Bash(gh alias *)",

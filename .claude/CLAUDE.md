@@ -8,7 +8,7 @@ A Claude Code mod: a virtual pet in a pane. `hooks/register.tsx` is the hooks mo
 
 Rules:
 
-- Conventional Commits, subject states the result. No session-attribution lines or links to private AI sessions anywhere; `.githooks/commit-msg` and `scripts/privacy.sh` refuse them.
+- Conventional Commits, subject states the result. No session-attribution lines or links to private AI sessions anywhere; `.githooks/commit-msg` and `scripts/privacy.sh` refuse them, and `scripts/privacy-hook.sh` refuses them in `gh` commands.
 - Work goes through a branch and a pull request; `main` takes no direct commits.
 - Never add characters, names or sprites from existing franchises.
 - Run `scripts/gates.sh` before saying something works.

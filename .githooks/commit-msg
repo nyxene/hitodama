@@ -1,7 +1,8 @@
 #!/bin/sh
 # release-please derives the version and changelog from this; regex shared with the pull request check.
+top=$(git rev-parse --show-toplevel)
 subject=$(sed -n '/./{p;q;}' "$1")
-regex=$(cat "$(git rev-parse --show-toplevel)/scripts/subject.regex")
+regex=$(cat "$top/scripts/subject.regex")
 if ! printf '%s\n' "$subject" | grep -Eq "$regex"; then
     echo "hitodama: commit subject must be conventional: type(scope): text" >&2
     echo "          types: feat fix docs chore refactor perf test build ci revert" >&2
@@ -11,5 +12,13 @@ fi
 # A private Claude link points at a conversation or page nobody else can open.
 if grep -v '^#' "$1" | grep -q -E '^Claude-Session:|claude\.ai/(code|artifact|chat|share|project)'; then
     echo "hitodama: remove the private Claude link (and any Claude-Session line) from the commit message" >&2
+    exit 1
+fi
+# The words listed in .git/info/private-words stay out of every branch that can be pushed.
+list="$(git rev-parse --git-common-dir)/info/local-branches"
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+[ -n "$branch" ] && [ -s "$list" ] && grep -q -x -F "$branch" "$list" && exit 0
+if ! grep -v '^#' "$1" | sh "$top/scripts/privacy.sh" text; then
+    echo "hitodama: remove those words from the commit message" >&2
     exit 1
 fi

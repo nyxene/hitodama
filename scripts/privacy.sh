@@ -4,16 +4,36 @@
 #   private-words   one grep -E pattern per line, refused in tracked files
 #   local-branches  one branch name per line; such branches skip these local lists and pre-push refuses them
 # git grep reads tracked and new files by name, so spaces or quotes in a file name cannot split it.
-cd "$(git rev-parse --show-toplevel)"
+# `privacy.sh text` checks text about to be posted (a commit message, a pull request, an issue) from stdin instead.
+cd "$(dirname "$0")/.."
 info="$(git rev-parse --git-common-dir)/info"
-# git grep exits 1 for no match; anything above that is a broken search, never a clean tree.
+links='claude\.ai/(code|artifact|chat|share|project)|Claude-Session:'
+# grep exits 1 for no match; anything above that is a broken search, never clean text.
+checked() {
+    [ "$1" -gt 1 ] && { echo "privacy: the search itself failed ($1)" >&2; exit 2; }
+    return "$1"
+}
+if [ "$1" = text ]; then
+    text=$(cat)
+    # Posted text goes public from any branch, so local-branches skips nothing here.
+    printf '%s\n' "$text" | grep -q -E "$links"
+    if checked $?; then
+        echo "privacy: the text holds a private Claude link" >&2
+        exit 1
+    fi
+    [ -s "$info/private-words" ] || exit 0
+    printf '%s\n' "$text" | grep -q -i -E -f "$info/private-words"
+    if checked $?; then
+        echo "privacy: the text holds words listed in $info/private-words" >&2
+        exit 1
+    fi
+    exit 0
+fi
 search() {
     git grep --untracked -n -I "$@" -- . ':!scripts/privacy.sh' ':!scripts/pr-check.sh' ':!.githooks/commit-msg'
-    rc=$?
-    [ $rc -gt 1 ] && { echo "privacy: the search itself failed ($rc)" >&2; exit 2; }
-    return $rc
+    checked $?
 }
-if search -E 'claude\.ai/(code|artifact|chat|share|project)|Claude-Session:'; then
+if search -E "$links"; then
     echo "privacy: private Claude links in the tree" >&2
     exit 1
 fi
