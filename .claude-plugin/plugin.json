@@ -1,7 +1,7 @@
 {
   "name": "hitodama",
   "displayName": "Hitodama",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A pocket yokai that lives in a pane beside the Claude Code chat and grows from how you work: context, effort, model, limits, helpers.",
   "author": {
     "name": "Evgeniy Kovrov",
