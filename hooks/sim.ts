@@ -56,6 +56,17 @@ export function newEgg(now: number, life = 1, line = randomLine()): Pet {
   }
 }
 
+// What every tick touches; a saved file without it is damaged, never a reason to start a new egg.
+export const isPet = (p: unknown): p is Pet => {
+  const o = p as Partial<Pet> | null
+  return !!o && typeof o === 'object' && typeof o.at === 'number' && typeof o.ch === 'string'
+    && !!o.applied && typeof o.applied === 'object' && !!o.stats && typeof o.stats === 'object'
+    && Array.isArray(o.path) && Array.isArray(o.snackTimes)
+}
+
+export const isHistory = (h: unknown): h is History =>
+  !!h && Array.isArray((h as History).lives) && Array.isArray((h as History).seen)
+
 export const causeText = (key: string) => tr().cause[key] ?? key
 
 export function note(p: Pet, t: number, text: string) {

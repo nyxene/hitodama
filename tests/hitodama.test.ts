@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
-import { act, advance, newEgg, step, type Pet } from '../hooks/sim'
+import { act, advance, isHistory, isPet, newEgg, step, type Pet } from '../hooks/sim'
 import { cells, scene } from '../hooks/sprites'
 import { decide, statsText, title, type Ctx, type Win } from '../hooks/view'
 
@@ -151,4 +151,47 @@ test('the pane draws its screen, title and care buttons, doubling the screen whe
 test('the large screen is 64 × 24 cells, two columns per pixel', () => {
   const px = scene('idle', { ch: 'kyubi' }, 0)
   expect(cells(px, false, 2).length).toBe(Math.ceil((64 * 24 * 12) / 3) * 4)
+})
+
+test('a saved pet and history are told apart from damaged files', () => {
+  expect(isPet(JSON.parse(JSON.stringify(egg())))).toBe(true)
+  for (const bad of [null, {}, [], 'egg', { ...egg(), applied: undefined }, { ...egg(), stats: null }]) expect(isPet(bad)).toBe(false)
+  expect(isHistory({ lives: [], seen: [] })).toBe(true)
+  for (const bad of [null, {}, { lives: {}, seen: [] }, { lives: [] }]) expect(isHistory(bad)).toBe(false)
+})
+
+test('a run with nobody at the prompt leaves the pet alone', async ($, on) => {
+  // The first thing a window does is learn its session id; a run that stays out never asks.
+  let asked = 0
+  on('session.id', () => { asked += 1; return { value: 's1' } })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: null, isInteractive: false })
+  expect(asked).toBe(0)
+})
+
+test('a pet file cut off mid-write is left as it is, said once, and never replaced by an egg', async ($, on) => {
+  const writes: string[] = [], logs: string[] = []
+  let now = T0
+  on('clock.now', () => ({ value: (now += 3000) }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.blit', () => ({ value: {} }))
+  on('command.run', () => ({ text: '' }))
+  on('session.id', () => ({ value: 's1' }))
+  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/h' : undefined }))
+  on('process.run', () => ({ value: { stdout: '+0000\n', stderr: '', exitCode: 0, isStdoutTruncated: false, isStderrTruncated: false } }))
+  on('session.repo', () => ({ value: null }))
+  on('fs.exists', () => ({ value: true }))
+  on('fs.read', (_, e) => ({ value: e.path.endsWith('pet.json') ? '{"v":1,"life":' : 'null' }))
+  on('fs.list', () => ({ value: [] }))
+  on('fs.write', (_, e) => { writes.push(e.path); return { value: undefined } })
+  on('ui.log', (_, e) => { logs.push(e.text); return { value: undefined } })
+  on('command.register', () => ({ value: { command: 'hd' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  // Each /hd runs a tick: five failed ticks, one line about the file.
+  const hd = { command: 'hd', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
+  for (let i = 0; i < 5; i++) await $.command.run(hd)
+  expect(writes.filter(p => p.endsWith('pet.json'))).toEqual([])
+  expect(logs.filter(l => l.includes('pet.json')).length).toBe(1)
 })

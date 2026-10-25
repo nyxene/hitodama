@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import type { HitodamaView } from '../types'
 import { setLang, t as tr, width } from './i18n'
-import { act, advance, applyEvent, bury, causeText, finishGame, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
+import { act, advance, applyEvent, bury, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, scene } from './sprites'
 import { tuning as T } from './tuning'
 import { bar, decide, statsText, title, type Ctx, type Win } from './view'
@@ -77,12 +77,15 @@ export const register: Register = (on, options) => {
   }
 
   on('session.start', async ($, e, next) => {
+    // A `claude -p` run or the SDK has nobody at the prompt: it must not take the pet from a window that has.
+    if (!e.isInteractive) return next(e)
     const sid = await $.session.id()
     const cwd = e.cwd
-    // No home folder, no pet: never fall back to writing into the project.
-    const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+    // No home folder, no pet: never fall back to writing into the project, as a relative path would.
+    const absolute = (p?: string) => (p && (p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)) ? p : undefined)
+    const home = absolute(await $.env.get('HOME')) ?? absolute(await $.env.get('USERPROFILE'))
     if (!home) {
-      $.ui.log('hitodama: neither HOME nor USERPROFILE is set, the pet stays away')
+      $.ui.log('hitodama: neither HOME nor USERPROFILE is an absolute path, the pet stays away')
       return next(e)
     }
     dir = `${home}/.claude/hitodama`
@@ -90,8 +93,21 @@ export const register: Register = (on, options) => {
     const readJson = async <V,>(path: string): Promise<V | null> => {
       try { return JSON.parse(await $.fs.read(path)) as V } catch { return null }
     }
-    const tz = await $.process.run(['date', '+%z']).catch(() => null)
-    const m = tz?.stdout.trim().match(/^([+-])(\d\d)(\d\d)$/)
+    // A history that does not read is not written over with less: the one in memory stands.
+    const readHistory = async () => { const h = await readJson<unknown>(`${dir}/history.json`); return isHistory(h) ? h : history }
+    // A pet file that is there but does not read is left alone: the tick is skipped, never replaced by an egg.
+    const petPath = `${dir}/pet.json`
+    const readPet = async (): Promise<Pet | null> => {
+      if (!(await $.fs.exists(petPath))) return null
+      const p = await readJson<unknown>(petPath)
+      if (!isPet(p)) throw new Error(`${petPath} does not read as a pet; it is kept as it is until it reads again, is fixed or is removed`)
+      return p
+    }
+    // date from where systems keep it, PATH only where neither exists (NixOS); else the runtime's offset.
+    let m: RegExpMatchArray | null | undefined = null
+    for (const date of ['/bin/date', '/usr/bin/date', 'date']) {
+      m ??= (await $.process.run([date, '+%z']).catch(() => null))?.stdout.trim().match(/^([+-])(\d\d)(\d\d)$/)
+    }
     const offsetMin = m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : -new Date().getTimezoneOffset()
     const hourAt = (t: number) => new Date(t + offsetMin * 60_000).getUTCHours()
 
@@ -148,13 +164,15 @@ export const register: Register = (on, options) => {
       // Mods cannot delete files, so old session files stay; only recently written ones are read.
       const listed = (await $.fs.list(`${dir}/seen`).catch(() => [])).filter(f => f.name.endsWith('.json') && f.name !== `${sid}.json`)
       const recent = listed.filter(f => now - f.mtimeMs < T.presence.staleAfterMinutes * 60_000)
-      const others = (await Promise.all(recent.map(f => readJson<Win>(`${dir}/seen/${f.name}`))))
-        .filter((w): w is Win => !!w && now - w.alive < T.presence.staleAfterMinutes * 60_000)
+      // A window counts only under its own file name, and no later than now, so one file cannot claim the pet for good.
+      const others = (await Promise.all(recent.map(async f => ({ name: f.name, w: await readJson<Win>(`${dir}/seen/${f.name}`) }))))
+        .flatMap(({ name, w }) => w && typeof w.sid === 'string' && name === `${w.sid}.json` && now - w.alive < T.presence.staleAfterMinutes * 60_000
+          ? [{ ...w, lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
       const fresh = [win, ...others]
       const owner = [...fresh].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
       const isOwner = owner.sid === sid
 
-      const p = (await readJson<Pet>(`${dir}/pet.json`)) ?? newEgg(now)
+      const p = (await readPet()) ?? newEgg(now)
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
         advance(p, now, hourAt)
@@ -173,17 +191,17 @@ export const register: Register = (on, options) => {
         if (p.call && p.call.since !== was.call) notify(tr().notifyCall(nameOf(p.ch), tr().callWord[p.call.reason]))
         if (p.tantrum && p.tantrum.since !== was.tantrum) notify(tr().notifyTantrum(nameOf(p.ch)))
         if (p.dead && !was.dead) {
-          history = bury(p, (await readJson<History>(`${dir}/history.json`)) ?? history)
+          history = bury(p, await readHistory())
           await $.fs.write(`${dir}/history.json`, JSON.stringify(history))
           notify(tr().notifyDeath(nameOf(p.ch), causeText(p.dead.cause)))
         }
         if (p.ch !== was.ch) {
-          history = remember((await readJson<History>(`${dir}/history.json`)) ?? history, p.ch)
+          history = remember(await readHistory(), p.ch)
           await $.fs.write(`${dir}/history.json`, JSON.stringify(history))
         }
         const kept = p.dead && now - p.dead.at > T.death.newEggSeconds * 1000 ? { ...newEgg(now, p.life + 1), applied: p.applied } : p
         // Known limit: the previous owner may write one more tick after ownership moves; fine while a tick is 3 seconds.
-        await $.fs.write(`${dir}/pet.json`, JSON.stringify(kept))
+        await $.fs.write(petPath, JSON.stringify(kept))
         pet = kept
       } else pet = p
 
@@ -191,13 +209,18 @@ export const register: Register = (on, options) => {
       await refresh(now, isOwner, fresh, owner.room)
     }
     // Timer ticks and presses run one at a time so files are never read and written in a race.
+    // A tick can fail once in passing (a file read while another window writes it); three in a row are said once.
+    let failures = 0
     const tick = (action?: (p: Pet, now: number) => void) =>
-      (busy = busy.then(() => tickNow(action)).catch(err => $.ui.log(`hitodama: ${String(err)}`)))
+      (busy = busy.then(() => tickNow(action)).then(() => { failures = 0 }, err => {
+        failures += 1
+        if (failures === 3) $.ui.log(`hitodama: ticks are skipped: ${String(err)}`)
+      }))
 
     const kept = await readJson<Win>(seenPath(sid))
-    const known = (await readJson<Pet>(`${dir}/pet.json`))?.applied?.[sid] !== undefined
+    const known = (await readJson<Pet>(petPath))?.applied?.[sid] !== undefined
     win = { ...win, ...kept, sid, turn: false, ...(known ? {} : { events: [] }) }
-    history = (await readJson<History>(`${dir}/history.json`)) ?? history
+    history = await readHistory()
     io = {
       tick: async action => {
         touch(await $.clock.now())
