@@ -1,5 +1,5 @@
 import type { On } from 'claude-code'
-import { expect, test, type Engine } from 'claude-code/testing'
+import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code/testing'
 
 import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
@@ -13,6 +13,9 @@ const utc = (t: number) => new Date(t).getUTCHours()
 const win: Win = { sid: 'a', room: 'r', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'high', turn: false, agents: 0, errors: 0, limit5: 0, seq: 0, events: [] }
 const ctx = (now: number, over: Partial<Ctx> = {}): Ctx => ({ now, isOwner: true, ownerRoom: 'r', limit5: 0, idleMin: 0, anim: null, ...over })
 const egg = () => newEgg(T0, 1, 'yokai')
+// The kit's 5 s limit is wall-clock time: on a loaded machine the drawing and session tests ran up to fifteen
+// times slower than idle, and a run failed once and passed on rerun (#13). They check results, not speed.
+const test = (name: string, body: TestBody) => kitTest(name, { timeoutMs: 60_000 }, body)
 
 // Lives online, always fed and cleaned up: perfect care.
 function liveWell(p: Pet, from: number, to: number) {
