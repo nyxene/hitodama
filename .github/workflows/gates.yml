@@ -21,10 +21,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # npm trusts the certificates its Node bundles: 24.22.1 drops the revoked emSign CAs (#15).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+
       # Mods need Claude Code 2.1.287 or newer; validate and test run offline, no login.
       # gates.sh: validate, test, the privacy check and its hook (jq ships with the runner); no types here.
       - name: Gates
         run: |
+          node --version
           npm install -g @anthropic-ai/claude-code@2.1.310
           sh scripts/gates.sh
 
