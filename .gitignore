@@ -1,6 +1,6 @@
 .DS_Store
 # Laid by Claude Code when it loads the mod; used only for local type-checking.
-/.claude-plugin/types/
+/.claude-plugin/types
 /.claude/settings.local.json
 # Orrery's work records (plans, handoffs, retrospectives) stay with the maintainer.
 /.orrery/work/
