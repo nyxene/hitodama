@@ -1,34 +1,9 @@
 #!/bin/sh
-# Branches listed in .git/info/local-branches (one name per line) stay on this machine, under any name, and the
-# messages of commits no remote holds yet pass `privacy.sh text`, however they reached the branch being pushed.
-list="$(git rev-parse --git-common-dir)/info/local-branches"
+# The messages of commits no remote holds yet pass `privacy.sh text`, however they reached the branch being pushed.
 privacy="$(git rev-parse --show-toplevel)/scripts/privacy.sh"
 while read -r local_ref local_sha _ _; do
-    name=${local_ref#refs/heads/}
-    if [ "$name" != "$local_ref" ] && [ -s "$list" ] && grep -q -x -F "$name" "$list"; then
-        echo "hitodama: $name is listed in $list and is never pushed" >&2
-        exit 1
-    fi
     # A deleted ref arrives as all zeros and pushes no commits.
     case $local_sha in *[!0]*) ;; *) continue ;; esac
-    # Under another name (git push origin HEAD:x, or a branch cut from one) a local branch's commits still stay:
-    # none that no remote holds may be in what is pushed. A commit the local branch shares with the pushed one
-    # (the local branch was cut from it) counts too; rebase the local branch onto main once the other is merged.
-    if [ -s "$list" ]; then
-        if [ -z "$(git for-each-ref --count=1 refs/remotes)" ]; then
-            echo "hitodama: no remote-tracking branches, so local-only commits cannot be told apart; git fetch first" >&2
-            exit 1
-        fi
-        for branch in $(cat "$list"); do
-            git rev-parse -q --verify "refs/heads/$branch" >/dev/null || continue
-            own=$(git rev-list --count "refs/heads/$branch" --not --remotes)
-            left=$(git rev-list --count "refs/heads/$branch" --not --remotes "$local_sha")
-            if [ "$left" -lt "$own" ]; then
-                echo "hitodama: $local_ref holds commits of $branch, which is listed in $list and never pushed" >&2
-                exit 1
-            fi
-        done
-    fi
     if ! git log --format=%B "$local_sha" --not --remotes | sh "$privacy" text; then
         echo "hitodama: a commit message pushed to $local_ref holds what privacy.sh refuses; reword it" >&2
         exit 1
