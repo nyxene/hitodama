@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/nyxene/hitodama/compare/v0.1.1...v0.1.2) (2026-10-31)
+
+
+### Fixed
+
+* old age waits out the pocket, the usage limit puts the pet to sleep for real, and the docs say what the code does ([#20](https://github.com/nyxene/hitodama/issues/20)) ([fca50b2](https://github.com/nyxene/hitodama/commit/fca50b20c69473805836cf61d039936d2e84afb9))
+
 ## [0.1.1](https://github.com/nyxene/hitodama/compare/v0.1.0...v0.1.1) (2026-10-25)
 
 
