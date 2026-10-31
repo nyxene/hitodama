@@ -1,6 +1,6 @@
 name: Translation fix
 description: A wrong or clumsy line in one of the interface languages
-labels: [scope:i18n]
+labels: ["scope:i18n"]
 body:
   - type: dropdown
     id: language

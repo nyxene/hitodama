@@ -173,8 +173,10 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
       p.poops = Math.min(T.poop.max, p.poops + 1)
     }
   }
-  // In the pocket nothing is fatal: health stops at the sickness line and hunger does not count towards starving.
-  const floor = offline ? Math.min(p.hp, T.needs.sick) : 0
+  // In the pocket and at the limit nothing is fatal: health stops at the sickness line and hunger does not count
+  // towards starving.
+  const safe = offline || resting
+  const floor = safe ? Math.min(p.hp, T.needs.sick) : 0
   p.hp = Math.max(floor, clamp(p.hp - (T.poop.healthPerHourEach * p.poops + (p.sick ? T.sick.hpPerHour : 0)) * h * off))
   if (p.hp < T.needs.sick && !p.sick) {
     p.sick = true
@@ -182,29 +184,31 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
     note(p, t, tr().logSick)
   }
 
-  // Hunger counts towards starving only while it can be fed: not in the pocket, not asleep.
-  p.starve = p.sat > 0 ? 0 : offline || p.asleep ? p.starve : p.starve + h
+  // Hunger counts towards starving only while it can be fed and is not resting: not in the pocket, not asleep.
+  p.starve = p.sat > 0 ? 0 : safe || p.asleep ? p.starve : p.starve + h
   if (p.starve >= T.death.starveHours) return die(p, t, 'starve')
   if (p.hp <= 0) return die(p, t, 'sick')
-  // Old age waits for Claude to be back, so a pet never dies in the pocket.
-  if (life !== undefined && p.ageDays >= life && !offline) return die(p, t, 'old')
-
-  // In the pocket or at the limit an open call or tantrum waits: its 15 minutes start again afterwards.
-  if (offline || resting) {
-    if (p.call) p.call.since = t
-    if (p.tantrum) p.tantrum.since = t
-    return
-  }
+  // Old age waits for the pocket and the limit to end, so a pet never dies while it cannot be watched over.
+  if (life !== undefined && p.ageDays >= life && !safe) return die(p, t, 'old')
 
   // A call unanswered for 15 minutes is a care mistake. Asleep it calls only for what can be done at night.
   const need: Call['reason'] | null = p.asleep
     ? (p.sick ? 'sick' : !p.lightsOff ? 'light' : null)
     : p.sat < T.needs.hungry ? 'hungry' : p.joy < T.needs.sad ? 'sad' : p.sick ? 'sick' : null
   if (!need) p.call = null
-  else if (!p.call || p.call.reason !== need) {
+
+  // In the pocket or at the limit an open call or tantrum waits, and one whose need is gone closes: its 15 minutes
+  // start again afterwards.
+  if (safe) {
+    if (p.call) p.call.since = t
+    if (p.tantrum) p.tantrum.since = t
+    return
+  }
+
+  if (need && (!p.call || p.call.reason !== need)) {
     p.call = { reason: need, since: t, missed: false }
     note(p, t, tr().logCall(tr().callWord[need]))
-  } else if (!p.call.missed && t - p.call.since >= T.attention.answerMinutes * MIN) {
+  } else if (p.call && !p.call.missed && t - p.call.since >= T.attention.answerMinutes * MIN) {
     p.call.missed = true
     p.cm += 1
     note(p, t, tr().logCareMiss(T.attention.answerMinutes))

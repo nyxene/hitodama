@@ -109,6 +109,36 @@ test('at the five-hour limit a hungry pet rests: no call and no care mistake unt
   expect(p.cm).toBe(1)
 })
 
+test('at the five-hour limit nothing kills it, and a call it no longer needs closes', () => {
+  const p = egg()
+  advance(p, T0 + 70 * MIN, utc)
+  p.sat = 0; p.hp = 30; p.poops = 4
+  step(p, p.at + MIN, MIN, utc(p.at), false)
+  expect(p.call?.reason).toBe('hungry')
+  const t = p.at + MIN
+  for (let i = 1; i <= 24 * 60; i++) step(p, t + i * MIN, MIN, utc(t + i * MIN), false, true)
+  expect(p.dead).toBeNull()
+  expect(p.hp).toBeGreaterThan(0)
+  p.sat = 90; p.joy = 90; p.sick = false
+  step(p, t + 24 * 60 * MIN + MIN, MIN, utc(t), false, true)
+  expect(p.call).toBeNull()
+})
+
+test('at the five-hour limit an open call sends no notification on every tick', async ($, on) => {
+  const p = child()
+  p.sat = 10
+  advance(p, T0 + 3000, utc)
+  expect(p.call?.reason).toBe('hungry')
+  const limited: Win = { ...win, sid: 's2', alive: T0 + HOUR, limit5: 100, limitResetsAt: new Date(T0 + 5 * HOUR).toISOString() }
+  let notified = 0
+  on('ui.notify', () => { notified += 1; return { value: { isSent: true, channel: 'ghostty' } as const } })
+  // Timer ticks, not /hd: /hd counts as typing, and nobody is notified while typing.
+  const s = await session($, on, { 'pet.json': JSON.stringify(p), 'seen/s2.json': JSON.stringify(limited) }, { timer: true })
+  for (let i = 0; i < 5; i++) await s.timerTick()
+  expect(JSON.parse(s.writes['pet.json'] ?? '{}').call?.reason).toBe('hungry')
+  expect(notified).toBe(0)
+})
+
 test('medicine: a badly sick pet needs a second dose', () => {
   const p = egg()
   advance(p, T0 + 70 * MIN, utc)
@@ -202,11 +232,14 @@ const child = () => { const p = newEgg(T0 - 71 * MIN, 1, 'yokai'); advance(p, T0
 
 // A session over a fake home folder: files maps a name under ~/.claude/hitodama to its content.
 // Each /hd runs one tick, three seconds after the last; a failing one is said after three in a row.
-async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean } = {}) {
+// timer: the three-second tick runs once per timerTick() instead of at once.
+async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean; timer?: boolean } = {}) {
   const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, logs: string[] = []
   let now = T0
+  const waiting: (() => void)[] = []
   on('clock.now', () => ({ value: (now += 3000) }))
-  on('clock.every', () => ({ value: undefined }))
+  on('clock.every', (_, e) => !opts.timer ? { value: undefined }
+    : new Promise(done => { if (e.ms === 3000) waiting.push(() => done({ value: undefined })) }))
   on('ui.blit', () => ({ value: {} }))
   on('command.run', () => ({ text: '' }))
   on('session.id', () => ({ value: 's1' }))
@@ -226,7 +259,10 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   const hd = { command: 'hd', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
-  return { files, writes, logs, hd: () => $.command.run(hd) }
+  // The runtime has timers, the mod types do not declare them.
+  const settle = () => new Promise<void>(done => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(done, 50))
+  const timerTick = async () => { await settle(); waiting.shift()?.(); await settle() }
+  return { files, writes, logs, hd: () => $.command.run(hd), timerTick }
 }
 
 test('a pet file cut off mid-write is left as it is, said once, and never replaced by an egg', async ($, on) => {

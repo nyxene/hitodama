@@ -104,7 +104,8 @@ export const register: Register = (on, options) => {
       if (!isPet(p)) throw new Error(`${petPath} does not read as a pet; it is kept as it is until it reads again, is fixed or is removed`)
       return p
     }
-    // date from where systems keep it, PATH only where neither exists (NixOS); else the runtime's offset.
+    // date from /bin, then /usr/bin, then PATH (NixOS), each only when the one before gave no offset; else the
+    // runtime's offset.
     let m: RegExpMatchArray | null | undefined = null
     for (const date of ['/bin/date', '/usr/bin/date', 'date']) {
       m ??= (await $.process.run([date, '+%z']).catch(() => null))?.stdout.trim().match(/^([+-])(\d\d)(\d\d)$/)
@@ -179,7 +180,8 @@ export const register: Register = (on, options) => {
       const p = (await readPet()) ?? newEgg(now)
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
-        advance(p, now, hourAt, limitOf(fresh, now).limit5 >= T.limits.fiveHourHit)
+        const resting = limitOf(fresh, now).limit5 >= T.limits.fiveHourHit
+        advance(p, now, hourAt, resting)
         for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
         }
@@ -191,11 +193,12 @@ export const register: Register = (on, options) => {
         action?.(p, now)
         // A game left open ends once the pet cannot play, so its state shows again.
         if (game && !canPlay(p)) game = null
-        // Notify only when you are not typing in any window.
+        // Notify only when you are not typing in any window. At the limit an open call's clock restarts every tick
+        // without it calling again.
         const quiet = now - Math.max(...fresh.map(w => w.lastInput)) > T.notify.quietMinutes * 60_000
         const notify = (text: string) => { if (quiet) void $.ui.notify(text, { title: NAME }).catch(() => {}) }
-        if (p.call && p.call.since !== was.call) notify(tr().notifyCall(nameOf(p.ch), tr().callWord[p.call.reason]))
-        if (p.tantrum && p.tantrum.since !== was.tantrum) notify(tr().notifyTantrum(nameOf(p.ch)))
+        if (!resting && p.call && p.call.since !== was.call) notify(tr().notifyCall(nameOf(p.ch), tr().callWord[p.call.reason]))
+        if (!resting && p.tantrum && p.tantrum.since !== was.tantrum) notify(tr().notifyTantrum(nameOf(p.ch)))
         if (p.dead && !was.dead) {
           history = bury(p, await readHistory())
           await $.fs.write(`${dir}/history.json`, JSON.stringify(history))
