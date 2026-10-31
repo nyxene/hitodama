@@ -179,7 +179,7 @@ export const register: Register = (on, options) => {
       const p = (await readPet()) ?? newEgg(now)
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
-        advance(p, now, hourAt)
+        advance(p, now, hourAt, limitOf(fresh, now).limit5 >= T.limits.fiveHourHit)
         for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
         }

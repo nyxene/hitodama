@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: 24.22.1
 
-      # Mods need Claude Code 2.1.287 or newer; validate and test run offline, no login.
+      # The README's minimum Claude Code is this version; validate and test run offline, no login.
       # gates.sh: validate, test, the privacy check and its hook (jq ships with the runner); no types here.
       - name: Gates
         run: |

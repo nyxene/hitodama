@@ -10,20 +10,22 @@ In Japanese folklore a night parade of a hundred spirits, the *hyakki yagyō*, w
 | Baby | 65 minutes | Hitodama |
 | Child | until day 3 | Sunekosuri |
 | Teen | until day 6 | Kitsune (0–2 care mistakes as a child), Tanuki (3 or more) |
-| Adult | until the end of its life | from Kitsune: Kyubi, Tengu, Bakeneko, Kappa, Tsuchinoko, Nuppeppo; from Tanuki: Bakeneko, Tsuchinoko, Nuppeppo |
+| Adult | until the end of its life | from Kitsune: Kyūbi, Tengu, Bakeneko, Kappa, Tsuchinoko, Nuppeppo; from Tanuki: Bakeneko, Tsuchinoko, Nuppeppo |
 | Secret | day 10 | Karakasa |
 
 Mistakes are counted per stage. A teen's starting discipline is 50% if the child reached 75% discipline, otherwise 0%. The first adult rule that matches wins:
 
 | From | Rule | Grows into |
 | --- | --- | --- |
-| Kitsune | 0–2 care mistakes, no discipline mistakes, started at 50% | Kyubi |
+| Kitsune | 0–2 care mistakes, no discipline mistakes, started at 50% | Kyūbi |
 | Kitsune | 0–2 care mistakes, exactly one discipline mistake | Tengu |
 | Kitsune or Tanuki | discipline at 100% (Kitsune: 3+ care mistakes; Tanuki: 0–3) | Bakeneko |
 | Kitsune | 0–3 care mistakes, anything else | Kappa |
 | Kitsune or Tanuki | 4–7 care mistakes (Tanuki: 0–7) | Tsuchinoko |
 | Kitsune or Tanuki | 8 or more care mistakes | Nuppeppo |
 | Kappa | the teen started at 0%, on day 10 | Karakasa |
+
+A life span counts the pet's days since the egg, not its days as an adult: Nuppeppo, grown on day 6, dies of old age on day 9. In the last fifth of its life span its needs drop three times as fast.
 
 ## The characters
 
@@ -43,30 +45,30 @@ Foxes in Japanese belief gain power with age: they learn to take human shape, to
 
 A shape-shifting raccoon dog, cheerful and greedy. It puts a leaf on its head to change shape and drums on its own belly on moonlit nights. Clay tanuki from Shigaraki, in a straw hat and with a bottle of sake, still stand outside Japanese shops for luck.
 
-### Kyubi 九尾の狐 · adult · lives 21 days
+### Kyūbi 九尾の狐 · adult · sleeps 22:00–9:00 · lives 21 days
 
 The nine-tailed fox, a thousand years old. The best known is Tamamo-no-Mae, a beauty at the court of Emperor Toba who was unmasked by a court diviner. Killed near Mount Nasu, the fox became the Sesshō-seki, the "killing stone". In 2022 the stone split in two, and newspapers reported it.
 
-### Tengu 天狗 · adult · lives 18 days
+### Tengu 天狗 · adult · sleeps 22:00–9:00 · lives 18 days
 
 A mountain spirit dressed as a yamabushi ascetic: red face, long nose, a small black tokin cap and a feather fan. Tengu are proud and teach the arrogant a hard lesson. In legend, the tengu Sōjōbō of Mount Kurama taught swordsmanship to the young Minamoto no Yoshitsune.
 
-### Bakeneko 化け猫 · adult · lives 16 days
+### Bakeneko 化け猫 · adult · sleeps 22:00–9:00 · lives 16 days
 
 A cat that lives too long becomes a shape-shifter. The bakeneko walks on its hind legs, licks the oil from lamps and speaks with a human voice. In Edo-period tales cats gather at night and dance with a tenugui towel tied around their heads.
 
-### Kappa 河童 · adult · lives 14 days
+### Kappa 河童 · adult · sleeps 23:00–11:00 · lives 14 days
 
 A river imp the size of a child: a beak, a turtle shell, webbed hands and a dish of water on top of its head. Spill the water and it loses its strength, so you greet a kappa with a bow: a polite kappa bows back and spills it. It loves cucumbers and sumo.
 
-### Tsuchinoko 槌の子 · adult · lives 10 days
+### Tsuchinoko 槌の子 · adult · sleeps 22:00–9:00 · lives 10 days
 
 A snake fat in the middle like a tsuchi mallet, hence the name. It is said to jump several metres and to roll along with its tail in its mouth. People still "hunt" it: some Japanese towns offer a reward for a live one.
 
-### Nuppeppo ぬっぺっぽう · adult · lives 9 days
+### Nuppeppo ぬっぺっぽう · adult · sleeps 22:00–10:00 · lives 9 days
 
 A lump of sagging, folded flesh with a barely visible face. It wanders abandoned temples and graveyards at night and smells of rotten meat, but harms no one. Toriyama Sekien drew it in *The Illustrated Night Parade of a Hundred Demons* (1776).
 
-### Karakasa 唐傘お化け · secret · lives 20 days
+### Karakasa 唐傘お化け · secret · sleeps 23:00–10:00 · lives 20 days
 
 A tsukumogami, an object that has served for a hundred years and gained a soul. An old paper umbrella with one eye and a long tongue hops on its single leg and startles passers-by. It is one of the best known yokai, printed on Edo-period obake karuta cards and board games.

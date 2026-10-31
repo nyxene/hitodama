@@ -39,7 +39,7 @@ test('the egg hatches after 5 minutes and the baby grows after 65 more', () => {
   expect(p.ch).toBe('sunekosuri')
 })
 
-test('perfect care grows a Kyubi', () => {
+test('perfect care grows a Kyūbi', () => {
   const p = egg()
   liveWell(p, T0, T0 + 3 * DAY + 2 * HOUR)
   expect(p.ch).toBe('kitsune')
@@ -83,6 +83,30 @@ test('a weekend with Claude closed is not fatal: the pet comes back hungry', () 
   expect(p.dead).toBeNull()
   expect(p.sat).toBe(0)
   expect(p.hp).toBeGreaterThanOrEqual(20)
+})
+
+test('old age waits while Claude is closed, and comes once it is back', () => {
+  const p = egg()
+  advance(p, T0 + 70 * MIN, utc)
+  p.ch = 'kyubi'; p.ageDays = (CHARS.kyubi!.lifeDays ?? 0) - 1
+  advance(p, p.at + 3 * DAY, utc)
+  expect(p.ageDays).toBeGreaterThanOrEqual(CHARS.kyubi!.lifeDays!)
+  expect(p.dead).toBeNull()
+  step(p, p.at + MIN, MIN, utc(p.at + MIN), false)
+  expect(p.dead?.cause).toBe('old')
+})
+
+test('at the five-hour limit a hungry pet rests: no call and no care mistake until the reset', () => {
+  const p = egg()
+  advance(p, T0 + 70 * MIN, utc)
+  p.sat = 10
+  const t = p.at
+  for (let i = 1; i <= 30; i++) step(p, t + i * MIN, MIN, utc(t), false, true)
+  expect(p.call).toBeNull()
+  expect(p.cm).toBe(0)
+  for (let i = 31; i <= 46; i++) step(p, t + i * MIN, MIN, utc(t), false)
+  expect(p.call?.reason).toBe('hungry')
+  expect(p.cm).toBe(1)
 })
 
 test('medicine: a badly sick pet needs a second dose', () => {

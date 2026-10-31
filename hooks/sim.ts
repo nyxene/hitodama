@@ -126,7 +126,8 @@ function scheduleTantrum(p: Pet, t: number) {
 }
 
 // One time step. offline: Claude was closed, so everything is slower and there are no calls or tantrums.
-export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boolean): void {
+// resting: the five-hour limit is hit, so until the reset there are no calls or tantrums either.
+export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boolean, resting = false): void {
   if (p.dead) return
   const h = dtMs / HOUR
   const st = stageOf(p)
@@ -185,10 +186,11 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
   p.starve = p.sat > 0 ? 0 : offline || p.asleep ? p.starve : p.starve + h
   if (p.starve >= T.death.starveHours) return die(p, t, 'starve')
   if (p.hp <= 0) return die(p, t, 'sick')
-  if (life !== undefined && p.ageDays >= life) return die(p, t, 'old')
+  // Old age waits for Claude to be back, so a pet never dies in the pocket.
+  if (life !== undefined && p.ageDays >= life && !offline) return die(p, t, 'old')
 
-  // In the pocket an open call or tantrum waits: its 15 minutes start again when Claude is back.
-  if (offline) {
+  // In the pocket or at the limit an open call or tantrum waits: its 15 minutes start again afterwards.
+  if (offline || resting) {
     if (p.call) p.call.since = t
     if (p.tantrum) p.tantrum.since = t
     return
@@ -223,13 +225,13 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
 }
 
 // Catches up from p.at to now in one-minute steps. A gap longer than staleAfter means "in the pocket".
-export function advance(p: Pet, now: number, hourAt: (t: number) => number): void {
+export function advance(p: Pet, now: number, hourAt: (t: number) => number, resting = false): void {
   const gap = now - p.at
   const offline = gap > T.presence.staleAfterMinutes * MIN
   const from = Math.max(p.at, now - 30 * 24 * HOUR)
   for (let t = from; t < now; t += MIN) {
     const dt = Math.min(MIN, now - t)
-    step(p, t + dt, dt, hourAt(t + dt), offline)
+    step(p, t + dt, dt, hourAt(t + dt), offline, resting)
   }
   p.at = now
 }
