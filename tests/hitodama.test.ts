@@ -10,8 +10,8 @@ import { bar, decide, limitOf, statsText, title, type Ctx, type Win } from '../h
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
 const T0 = Date.UTC(2026, 9, 24, 12) // noon UTC
 const utc = (t: number) => new Date(t).getUTCHours()
-const win: Win = { sid: 'a', room: 'r', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'high', turn: false, agents: 0, errors: 0, limit5: 0, seq: 0, events: [] }
-const ctx = (now: number, over: Partial<Ctx> = {}): Ctx => ({ now, isOwner: true, ownerRoom: 'r', limit5: 0, idleMin: 0, anim: null, ...over })
+const win: Win = { sid: 'a', room: 'r', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'high', turn: false, agents: 0, errors: 0, limit: 0, seq: 0, events: [] }
+const ctx = (now: number, over: Partial<Ctx> = {}): Ctx => ({ now, isOwner: true, ownerRoom: 'r', limit: 0, idleMin: 0, anim: null, ...over })
 const egg = () => newEgg(T0, 1, 'yokai')
 // The kit's 5 s limit is wall-clock time: on a loaded machine the drawing and session tests ran up to fifteen
 // times slower than idle, and a run failed once and passed on rerun (#13). They check results, not speed.
@@ -129,7 +129,7 @@ test('at the five-hour limit an open call sends no notification on every tick', 
   p.sat = 10
   advance(p, T0 + 3000, utc)
   expect(p.call?.reason).toBe('hungry')
-  const limited: Win = { ...win, sid: 's2', alive: T0 + HOUR, limit5: 100, limitResetsAt: new Date(T0 + 5 * HOUR).toISOString() }
+  const limited: Win = { ...win, sid: 's2', alive: T0 + HOUR, limit: 100, limitKind: 'five_hour', limitResetsAt: new Date(T0 + 5 * HOUR).toISOString() }
   let notified = 0
   on('ui.notify', () => { notified += 1; return { value: { isSent: true, channel: 'ghostty' } as const } })
   // Timer ticks, not /hd: /hd counts as typing, and nobody is notified while typing.
@@ -234,15 +234,19 @@ const child = () => { const p = newEgg(T0 - 71 * MIN, 1, 'yokai'); advance(p, T0
 
 // A session over a fake home folder: files maps a name under ~/.claude/hitodama to its content.
 // Each /hd runs one tick, three seconds after the last; a failing one is said after three in a row.
-// timer: the three-second tick runs once per timerTick() instead of at once.
+// timer: the three-second tick runs once per timerTick(), and the animation frame once per frameTick(), instead of at once.
+// blits holds the length of every animation frame sent.
 async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean; timer?: boolean } = {}) {
-  const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, logs: string[] = []
+  const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, logs: string[] = [], blits: number[] = []
   let now = T0
-  const waiting: (() => void)[] = []
+  const waiting: (() => void)[] = [], frames: (() => void)[] = []
   on('clock.now', () => ({ value: (now += 3000) }))
   on('clock.every', (_, e) => !opts.timer ? { value: undefined }
-    : new Promise(done => { if (e.ms === 3000) waiting.push(() => done({ value: undefined })) }))
-  on('ui.blit', () => ({ value: {} }))
+    : new Promise(done => { (e.ms === 3000 ? waiting : frames).push(() => done({ value: undefined })) }))
+  on('ui.blit', (_, e) => { if ('cells' in e) blits.push(e.cells.length); return { value: {} } })
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('session.end', (_, e) => ({ sessionId: e.sessionId }))
   on('command.run', () => ({ text: '' }))
   on('session.id', () => ({ value: 's1' }))
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/h' : undefined }))
@@ -264,8 +268,90 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
   // The runtime has timers, the mod types do not declare them.
   const settle = () => new Promise<void>(done => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(done, 50))
   const timerTick = async () => { await settle(); waiting.shift()?.(); await settle() }
-  return { files, writes, logs, hd: () => $.command.run(hd), timerTick }
+  const frameTick = async () => { await settle(); frames.shift()?.(); await settle() }
+  return { files, writes, logs, blits, hd: () => $.command.run(hd), timerTick, frameTick }
 }
+
+// Usage readings as session.measure brings them.
+const measure = ($: Engine, ...rateLimits: { kind: string; percentUsed: number; resetsAt?: string }[]) =>
+  $.session.measure({ context: { window: 200_000 }, rateLimits, changed: ['rateLimits'] })
+const pane = ($: Engine, surface: 'terminal' | 'desktop', bodyColumns: number, bodyRows: number) => $.ui.mount({
+  plugin: 'hitodama', surface, component: 'Pane', requestId: 'hitodama',
+  props: { title: 'Hitodama', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows }, view: {} },
+})
+
+test('without a five-hour limit the weekly one puts the pet to sleep at 100%, and the pane names it', async ($, on) => {
+  const p = child()
+  p.sat = 10
+  const s = await session($, on, { 'pet.json': JSON.stringify(p) })
+  await measure($, { kind: 'seven_day', percentUsed: 100, resetsAt: new Date(T0 + 2 * DAY).toISOString() })
+  await s.hd()
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).call).toBeNull()
+  const ui = await pane($, 'terminal', 70, 60)
+  expect(await ui.find({ type: 'Text', text: /weekly limit 100%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Sleeping until reset/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('with both limits reported the pet follows the five-hour one', async ($, on) => {
+  const p = child()
+  p.sat = 10
+  const s = await session($, on, { 'pet.json': JSON.stringify(p) })
+  await measure($, { kind: 'seven_day', percentUsed: 100 }, { kind: 'five_hour', percentUsed: 30 })
+  await s.hd()
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).call?.reason).toBe('hungry')
+  const ui = await pane($, 'terminal', 70, 60)
+  expect(await ui.find({ type: 'Text', text: /5h limit 30%/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('with no limit reported the pane shows none', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.hd()
+  const ui = await pane($, 'terminal', 70, 60)
+  expect(await ui.find({ type: 'Text', text: /helpers 0 · \d+ g/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('only the terminal pane sets the size the animation frames are cut to', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true })
+  const wide = Math.ceil((64 * 24 * 12) / 3) * 4
+  for (const [surface, cols, rows] of [['terminal', 70, 60], ['desktop', 40, 30]] as const) await (await pane($, surface, cols, rows)).unmount()
+  await s.frameTick()
+  expect(s.blits.at(-1)).toBe(wide)
+})
+
+test('a closing window applies its last events and says it is gone', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.hd()
+  await $.turn.start({ text: '', turnId: 't1', agentId: 'a1' })
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } })
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).stats.agents).toBe(1)
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).alive).toBe(0)
+})
+
+// A session started while pet.json did not read, with one saved event and one more of its own, then a tick once the
+// file reads as this pet: how many agents the pet counted.
+async function startUnread($: Engine, on: On, applied: Record<string, number>) {
+  const own: Win = { ...win, sid: 's1', seq: 1, events: [{ seq: 1, k: 'agent' }] }
+  const s = await session($, on, { 'pet.json': '{"v":1,"life":', 'seen/s1.json': JSON.stringify(own) })
+  await s.hd() // skipped, as the file still does not read
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events).toEqual([]) // no owner can apply it yet
+  await $.turn.start({ text: '', turnId: 't1', agentId: 'a1' })
+  await s.hd()
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events).toEqual([]) // its own one waits, to keep the order
+  s.files['pet.json'] = JSON.stringify({ ...child(), applied })
+  await s.hd()
+  return (JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).stats.agents
+}
+
+test('a pet file that does not read at session start keeps the saved events for a pet that knows the session', async ($, on) => {
+  expect(await startUnread($, on, { s1: 0 })).toBe(2)
+})
+
+test('a pet file that does not read at session start, then a pet that does not know the session, drops only them', async ($, on) => {
+  expect(await startUnread($, on, {})).toBe(1)
+})
 
 test('a pet file cut off mid-write is left as it is, said once, and never replaced by an egg', async ($, on) => {
   const s = await session($, on, { 'pet.json': '{"v":1,"life":' })
@@ -340,8 +426,30 @@ test('an adult that comes out on waking stays up until its own bedtime and ages 
 test('a five-hour limit whose reset has passed is not shown', () => {
   const now = T0
   const at = (ms: number) => new Date(now + ms).toISOString()
-  expect(limitOf([{ ...win, limit5: 100, limitResetsAt: at(-MIN) }, { ...win, limit5: 40, limitResetsAt: at(HOUR) }], now)).toEqual({ limit5: 40, limitResetsAt: at(HOUR) })
-  expect(limitOf([{ ...win, limit5: 100, limitResetsAt: at(-MIN) }], now).limit5).toBe(0)
+  const five = { ...win, limitKind: 'five_hour' } as const
+  expect(limitOf([{ ...five, limit: 100, limitResetsAt: at(-MIN) }, { ...five, limit: 40, limitResetsAt: at(HOUR) }], now))
+    .toEqual({ limit: 40, limitKind: 'five_hour', limitResetsAt: at(HOUR) })
+  expect(limitOf([{ ...five, limit: 100, limitResetsAt: at(-MIN) }], now)).toEqual({ limit: 0 })
+})
+
+test('a limit with no reset time lasts one span of that limit from when it was measured', () => {
+  const at = T0 - 5 * HOUR
+  expect(limitOf([{ ...win, limit: 100, limitKind: 'five_hour', limitAt: at + MIN }], T0).limit).toBe(100)
+  expect(limitOf([{ ...win, limit: 100, limitKind: 'five_hour', limitAt: at }], T0).limit).toBe(0)
+  expect(limitOf([{ ...win, limit: 100, limitKind: 'seven_day', limitAt: at }], T0).limit).toBe(100)
+  expect(limitOf([{ ...win, limit: 100, limitKind: 'seven_day', limitAt: T0 - 7 * DAY }], T0).limit).toBe(0)
+  // A reset time that does not read counts as none.
+  expect(limitOf([{ ...win, limit: 100, limitKind: 'five_hour', limitResetsAt: 'soon', limitAt: at + MIN }], T0).limit).toBe(100)
+  expect(limitOf([{ ...win, limit: 100, limitKind: 'five_hour', limitResetsAt: 'soon', limitAt: at }], T0).limit).toBe(0)
+  // A window written by an older version holds limit5 only, and hides no live figure.
+  const { limit: _, ...older } = win
+  const olderLimit = { ...older, limit5: 100, limitResetsAt: new Date(T0 + HOUR).toISOString() } as unknown as Win
+  expect(limitOf([olderLimit, { ...win, limit: 90, limitKind: 'seven_day', limitAt: T0 }], T0).limit).toBe(90)
+})
+
+test('the five-hour limit of any window comes before the weekly one', () => {
+  const wins: Win[] = [{ ...win, limit: 100, limitKind: 'seven_day', limitAt: T0 }, { ...win, limit: 30, limitKind: 'five_hour', limitAt: T0 }]
+  expect(limitOf(wins, T0)).toEqual({ limit: 30, limitKind: 'five_hour', limitResetsAt: undefined })
 })
 
 test('every label keeps a space before its value in every language', () => {

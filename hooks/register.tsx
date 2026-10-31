@@ -6,7 +6,7 @@ import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, scene } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, decide, limitOf, statsText, title, type Ctx, type Win } from './view'
+import { bar, decide, limitOf, statsText, title, type Ctx, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -21,7 +21,7 @@ const ACTIONS: [string, Press][] = [['1', 'eat'], ['2', 'snack'], ['3', 'game'],
 export const register: Register = (on, options) => {
   setLang(options.language)
   // Each window keeps itself in seen/<session>.json, so other windows see it and it survives a mod reload.
-  let win: Win = { sid: '', room: '', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'medium', turn: false, agents: 0, errors: 0, limit5: 0, seq: 0, events: [] }
+  let win: Win = { sid: '', room: '', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'medium', turn: false, agents: 0, errors: 0, limit: 0, seq: 0, events: [] }
   let pet: Pet | null = null
   let history: History = { lives: [], seen: [] }
   let anim: Ctx['anim'] = null
@@ -33,6 +33,10 @@ export const register: Register = (on, options) => {
   // File work lives in the session.start closure: $ may not be passed to functions.
   let dir = '' // ~/.claude/hitodama, set on session start
   let io: { tick: (action?: (p: Pet, now: number) => void) => Promise<void>; flush: () => Promise<void> } | null = null
+  // Saved events up to this seq wait for a pet that reads: the pet file did not read at session start (see there).
+  // A window that closes before then writes only the events of this run.
+  let unchecked = 0
+  const onDisk = () => JSON.stringify(unchecked ? { ...win, events: win.events.filter(ev => ev.seq > unchecked) } : win)
 
   const push = (e: Ev extends infer E ? (E extends Ev ? Omit<E, 'seq'> : never) : never) => {
     win.seq += 1
@@ -124,9 +128,9 @@ export const register: Register = (on, options) => {
     const refresh = async (now: number, isOwner: boolean, fresh: Win[], ownerRoom: string) => {
       const p = pet
       if (!p) return
-      const { limit5, limitResetsAt } = limitOf(fresh, now)
+      const limit = limitOf(fresh, now)
       const ctx: Ctx = {
-        now, isOwner, ownerRoom, limit5, limitResetsAt, anim,
+        ...limit, now, isOwner, ownerRoom, anim,
         idleMin: (now - Math.max(...fresh.map(w => Math.max(w.lastActivity, w.lastInput)))) / 60_000,
       }
       const d = game && isOwner ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
@@ -146,7 +150,8 @@ export const register: Register = (on, options) => {
         bars: [bar(B.sat, p.sat), bar(B.en, p.en), bar(B.joy, p.joy), bar(B.hp, p.hp), bar(B.disc, p.disc), bar(B.load, win.load)],
         stats: statsOpen ? statsText(p, history, now).split('\n') : [],
         log: [...(p.log ?? [])].reverse().map(l => `${hhmm(l.t)}  ${l.text}`),
-        meta: tr().meta(win.model, win.effort, win.agents, Math.round(limit5), p.weight, p.cm),
+        meta: tr().meta(win.model, win.effort, win.agents,
+          limit.limitKind ? tr().limitLine(Math.round(limit.limit), limit.limitKind === 'seven_day') : '', p.weight, p.cm),
       }
       const old = await read($, view)
       if (JSON.stringify(old) !== JSON.stringify(v)) await update($, view, () => v)
@@ -160,7 +165,9 @@ export const register: Register = (on, options) => {
         roomCheckedAt = now
         win.room = await roomName()
       }
-      await $.fs.write(seenPath(sid), JSON.stringify(win))
+      // While saved events wait to be checked, no events go to disk: no owner applies them unchecked, and the ones of
+      // this run, a tick later, still reach it in order.
+      await $.fs.write(seenPath(sid), JSON.stringify(unchecked ? { ...win, events: [] } : win))
 
       // Mods cannot delete files, so old session files stay; only recently written ones are read.
       // A listing that fails says nothing about who is gone: nothing is forgotten on that tick.
@@ -178,9 +185,13 @@ export const register: Register = (on, options) => {
       const isOwner = owner.sid === sid
 
       const p = (await readPet()) ?? newEgg(now)
+      if (unchecked) {
+        if (p.applied[sid] === undefined) win.events = win.events.filter(ev => ev.seq > unchecked)
+        unchecked = 0
+      }
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
-        const resting = limitOf(fresh, now).limit5 >= T.limits.fiveHourHit
+        const resting = limitOf(fresh, now).limit >= T.limits.hit
         advance(p, now, hourAt, resting)
         for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
@@ -227,8 +238,12 @@ export const register: Register = (on, options) => {
       }))
 
     const kept = await readJson<Win>(seenPath(sid))
-    const known = (await readJson<Pet>(petPath))?.applied?.[sid] !== undefined
+    // A pet file that does not read says nothing about this session: its saved events wait for the first tick that
+    // reads it, which drops them if the pet has no record of the session. Events of this run are never held back.
+    const saved = await readPet().catch(() => undefined)
+    const known = saved === undefined || saved?.applied[sid] !== undefined
     win = { ...win, ...kept, sid, turn: false, ...(known ? {} : { events: [] }) }
+    unchecked = saved === undefined ? win.seq : 0
     history = await readHistory()
     io = {
       tick: async action => {
@@ -254,7 +269,7 @@ export const register: Register = (on, options) => {
     await io?.flush()
     win.alive = 0
     if (win.sid && dir) {
-      await $.fs.write(`${dir}/seen/${win.sid}.json`, JSON.stringify(win)).catch(() => {})
+      await $.fs.write(`${dir}/seen/${win.sid}.json`, onDisk()).catch(() => {})
     }
     return next(e)
   })
@@ -311,12 +326,15 @@ export const register: Register = (on, options) => {
     return res
   }).catch(($, e, next) => next(e))
 
-  on('session.measure', ($, e, next) => {
+  // A reading with neither limit (before the first response, or off a subscription) keeps the last figure.
+  on('session.measure', async ($, e, next) => {
     if (e.context.percent !== undefined) win.load = Math.round(e.context.percent)
-    const five = e.rateLimits.find(r => r.kind === 'five_hour')
-    if (five) {
-      win.limit5 = five.percentUsed
-      win.limitResetsAt = five.resetsAt
+    const r = e.rateLimits.find(r => r.kind === 'five_hour') ?? e.rateLimits.find(r => r.kind === 'seven_day')
+    if (r) {
+      win.limit = r.percentUsed
+      win.limitKind = r.kind as LimitKind
+      win.limitResetsAt = r.resetsAt
+      win.limitAt = await $.clock.now()
     }
     return next(e)
   })
