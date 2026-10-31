@@ -19,7 +19,7 @@ export const tuning = {
   },
   load: { bands: [50, 80, 90], energyMul: [1, 1.3, 1.7, 2.2], compactJoy: 8 },
   night: { energyMul: 1.5, joyPerTurn: -1 }, // work while it sleeps
-  limits: { fiveHourTired: 80, fiveHourHit: 100 },
+  limits: { tired: 80, hit: 100 }, // percent of the usage limit the pet follows
   mood: { gameWin: 15, errorStreak: 3, errorJoy: -4, abort: -2, scoldNoReason: -5 },
   care: { meal: 35, snackJoy: 10, heal: 40, cure: 50, gameEnergy: -5 }, // a dose adds heal; health at cure ends the illness
   poop: { everyAwakeHours: 3, max: 4, healthPerHourEach: 3 },

@@ -7,11 +7,14 @@ import { tuning as T } from './tuning'
 export type Win = {
   sid: string; room: string; alive: number; lastInput: number; lastActivity: number; typingAt: number
   load: number; model: string; effort: string; turn: boolean; agents: number; errors: number
-  limit5: number; limitResetsAt?: string
+  // The usage limit the pet follows: the five-hour one when Claude Code reports it, else the weekly one.
+  limit: number; limitKind?: LimitKind; limitResetsAt?: string; limitAt?: number
   seq: number; events: Ev[]
 }
-export type Ctx = {
-  now: number; isOwner: boolean; ownerRoom: string; limit5: number; limitResetsAt?: string
+export type LimitKind = 'five_hour' | 'seven_day'
+export type Limit = { limit: number; limitKind?: LimitKind; limitResetsAt?: string }
+export type Ctx = Limit & {
+  now: number; isOwner: boolean; ownerRoom: string
   idleMin: number; anim?: { id: string; until: number; msg: string } | null
 }
 
@@ -20,11 +23,21 @@ const EFF: Record<string, string> = { low: 'think_low', medium: 'think_med', hig
 // Pads to n columns, and always leaves one space after a label longer than that.
 const col = (s: string, n: number) => pad(s, Math.max(n, width(s) + 1))
 
-// The five-hour limit to show: the fullest window whose reset has not passed (an idle window keeps an old figure).
-export function limitOf(wins: Win[], now: number): { limit5: number; limitResetsAt?: string } {
-  const live = wins.filter(w => !w.limitResetsAt || !(Date.parse(w.limitResetsAt) <= now))
-  const top = [...live].sort((a, b) => b.limit5 - a.limit5)[0]
-  return { limit5: top?.limit5 ?? 0, limitResetsAt: top?.limitResetsAt }
+const SPAN: Record<LimitKind, number> = { five_hour: 5 * 3_600_000, seven_day: 7 * 86_400_000 }
+
+// The limit to show: the fullest window whose reset has not passed (an idle window keeps an old figure), the five-hour
+// limit before the weekly one in every window. A figure without a reset time that reads lasts one span of its limit
+// from when it was measured, as its reset can come no later.
+export function limitOf(wins: Win[], now: number): Limit {
+  const live = wins.filter(w => {
+    if (!w.limitKind) return false // a window an older version wrote holds limit5 only
+    const reset = w.limitResetsAt ? Date.parse(w.limitResetsAt) : NaN
+    const end = Number.isFinite(reset) ? reset : (w.limitAt ?? -Infinity) + SPAN[w.limitKind]
+    return end > now
+  })
+  const five = live.filter(w => w.limitKind === 'five_hour')
+  const top = [...(five.length ? five : live)].sort((a, b) => b.limit - a.limit)[0]
+  return top ? { limit: top.limit, limitKind: top.limitKind, limitResetsAt: top.limitResetsAt } : { limit: 0 }
 }
 
 function left(ms: number) {
@@ -43,7 +56,7 @@ export function decide(p: Pet, w: Win, c: Ctx): { scene: string; msg: string } {
       ? { scene: 'hatch', msg: tr().hatch(n) }
       : { scene: 'evolve', msg: tr().evolve(n) }
   }
-  if (c.limit5 >= T.limits.fiveHourHit) {
+  if (c.limit >= T.limits.hit) {
     const reset = c.limitResetsAt ? Date.parse(c.limitResetsAt) - c.now : NaN
     return { scene: 'limit_hit', msg: Number.isFinite(reset) ? tr().limitHit(left(reset)) : tr().limitHitNoTime }
   }
@@ -61,7 +74,7 @@ export function decide(p: Pet, w: Win, c: Ctx): { scene: string; msg: string } {
   if (p.call?.reason === 'sad') return { scene: 'call', msg: tr().callMsg.sad }
   if (c.idleMin >= T.idle.nap) return { scene: 'sleep', msg: tr().nap(Math.round(c.idleMin)) }
   if (p.poops >= T.needs.dirtyAt) return { scene: 'dirty', msg: tr().dirty }
-  if (c.limit5 >= T.limits.fiveHourTired) return { scene: 'limit_tired', msg: tr().limitTired(Math.round(c.limit5)) }
+  if (c.limit >= T.limits.tired) return { scene: 'limit_tired', msg: tr().limitTired(Math.round(c.limit), c.limitKind === 'seven_day') }
   if (p.en < T.needs.tired) return { scene: 'tired', msg: tr().tired }
   if (c.idleMin >= T.idle.bored) return { scene: 'bored', msg: tr().bored }
   if (w.load >= T.load.bands[1]!) return { scene: 'load_heavy', msg: tr().loadHeavy(w.load) }

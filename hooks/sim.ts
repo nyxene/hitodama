@@ -126,7 +126,7 @@ function scheduleTantrum(p: Pet, t: number) {
 }
 
 // One time step. offline: Claude was closed, so everything is slower and there are no calls or tantrums.
-// resting: the five-hour limit is hit, so until the reset there are no calls or tantrums either.
+// resting: the usage limit the pet follows is hit, so until the reset there are no calls or tantrums either.
 export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boolean, resting = false): void {
   if (p.dead) return
   const h = dtMs / HOUR
