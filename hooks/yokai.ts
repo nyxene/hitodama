@@ -37,7 +37,7 @@ export const yokai: Line = {
     sunekosuri: { name: 'Sunekosuri', names: { ru: 'Сунэкосури', ja: 'すねこすり', zh: '擦脛怪', ko: '스네코스리' }, stage: 'child', sleep: [20, 9], weight: 10 }, // rubs against travellers' legs
     kitsune: { name: 'Kitsune', names: { ru: 'Кицунэ', ja: 'きつね', zh: '狐', ko: '키츠네' }, stage: 'teen', sleep: [21, 9], weight: 15 }, // a shape-shifting fox kit
     tanuki: { name: 'Tanuki', names: { ru: 'Тануки', ja: 'たぬき', zh: '狸', ko: '타누키' }, stage: 'teen', sleep: [21, 9], weight: 15 }, // a shape-shifter with a leaf on its head
-    kyubi: { name: 'Kyubi', names: { ru: 'Кюби', ja: 'きゅうび', zh: '九尾狐', ko: '큐비' }, stage: 'adult', sleep: [22, 9], weight: 30, lifeDays: 21 }, // the many-tailed fox
+    kyubi: { name: 'Kyūbi', names: { ru: 'Кюби', ja: 'きゅうび', zh: '九尾狐', ko: '큐비' }, stage: 'adult', sleep: [22, 9], weight: 30, lifeDays: 21 }, // the many-tailed fox
     tengu: { name: 'Tengu', names: { ru: 'Тэнгу', ja: 'てんぐ', zh: '天狗', ko: '텐구' }, stage: 'adult', sleep: [22, 9], weight: 30, lifeDays: 18 }, // a long-nosed mountain spirit
     bakeneko: { name: 'Bakeneko', names: { ru: 'Бакэнэко', ja: 'ばけねこ', zh: '化猫', ko: '바케네코' }, stage: 'adult', sleep: [22, 9], weight: 20, lifeDays: 16 }, // a cat with a towel on its head
     kappa: { name: 'Kappa', names: { ru: 'Каппа', ja: 'かっぱ', zh: '河童', ko: '갓파' }, stage: 'adult', sleep: [23, 11], weight: 25, lifeDays: 14 }, // a river imp with a dish of water on its head

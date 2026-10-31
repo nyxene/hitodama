@@ -2,7 +2,7 @@
 
 <h1 align="center">Hitodama</h1>
 
-<p align="center">A pocket yokai that lives in a pane beside the Claude Code chat and grows from how you work.</p>
+<p align="center">A pocket yokai that lives in a pane beside the Claude Code chat and grows from how you look after it.</p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
@@ -10,9 +10,9 @@
   <a href="https://github.com/nyxene/hitodama/actions/workflows/gates.yml"><img alt="gates" src="https://github.com/nyxene/hitodama/actions/workflows/gates.yml/badge.svg"></a>
 </p>
 
-Every life starts as an egg on a small monochrome LCD. Five minutes later a soul flame hatches, and over about a week it grows through a child and a teen into one of seven adult yokai from Japanese folklore. Which one depends on how you look after it: feed it, clean up, put it to bed, answer its calls, stop its tantrums.
+Every life starts as an egg on a small monochrome LCD. Five minutes later a soul flame hatches, and over about a week it grows through a child and a teen into one of six adult yokai from Japanese folklore, and one of them can turn into a secret seventh. Which one depends on how you look after it: feed it, clean up, put it to bed, answer its calls, stop its tantrums.
 
-It also lives off your session. Long context weighs down its backpack, a high effort setting makes it think hard alongside the model, helpers you start wait with it by the door, night work makes it grumpy, and hitting your usage limit puts it to sleep until the reset. `/compact` is a relief.
+It also lives off your session. Long context weighs down its backpack, a high effort setting makes it think hard alongside the model, helpers you start wait with it by the door, night work makes it grumpy, and hitting your five-hour usage limit puts it to sleep until the reset: it makes no calls and throws no tantrums, one already open waits, nothing can kill it, and you can still feed it. `/compact` is a relief. What it grows into depends only on its care mistakes and its discipline; a bad mood from your session can still make it call for you.
 
 ## Install
 
@@ -32,8 +32,8 @@ The pane opens on the next session start. `/hd` opens it any time, `/hd stats` p
 
 ## Requirements
 
-- Claude Code 2.1.287 or newer, in a terminal. The LCD is drawn only in the terminal; other surfaces show the text and the buttons.
-- A pane at least 34 columns wide. From 64 columns and 38 rows the screen doubles in size.
+- Claude Code 2.1.310 or newer (the version CI tests), in a terminal. The LCD is drawn only in the terminal; other surfaces show the text and the buttons.
+- A pane at least 32 columns wide inside its frame. From 64 columns and 38 rows inside the frame the screen doubles in size.
 
 ## Care
 
@@ -52,13 +52,13 @@ Keys work while the pane has focus.
 
 During play, 1 and 2 guess left or right and 9 quits the game.
 
-A call left unanswered for 15 minutes is a care mistake; a tantrum left alone is a discipline mistake. It falls asleep at its bedtime; asleep it calls only for the light or medicine, and hunger does not count towards starving. Mistakes decide what it grows into, and the rules are in [docs/yokai.md](docs/yokai.md), with the folklore behind each character. Starve it for 12 hours, or let an illness run, and it dies; a new egg arrives a minute later.
+A call left unanswered for 15 minutes is a care mistake; a tantrum left alone is a discipline mistake. It falls asleep at its bedtime; asleep it calls only for the light or medicine, and hunger does not count towards starving. Mistakes decide what it grows into, and the rules are in [docs/yokai.md](docs/yokai.md), with the folklore behind each character. Starve it for 12 hours, or let an illness run, and it dies; a grown yokai also dies of old age at the end of its life span. A new egg arrives a minute later.
 
-While Claude Code is closed the pet is "in your pocket": its needs drop at a third of the speed, it makes no calls (one already open gets its full 15 minutes again when you return), and neither hunger nor illness can kill it, so a weekend away is safe. It will be hungry when you come back, and the 12 hours start then. With several sessions open, the pet stays in the one you typed in last, and the others show where it went.
+While Claude Code is closed the pet is "in your pocket": its needs drop at 30% of the speed, it makes no calls (one already open gets its full 15 minutes again when you return), and nothing can kill it, so a weekend away is safe. It still ages, and a pet whose life span ran out while you were away dies once you are back. It will be hungry when you come back, and hunger counts towards starving again from then, on top of any hours it had starved before. With several sessions open, the pet stays in the one you typed in last, and the others show where it went.
 
 ## Settings
 
-Run `/config` and find Hitodama, or set it under `pluginConfigs.hitodama.options` in `~/.claude/settings.json`.
+Run `/config` and find Hitodama.
 
 | Option | Values | Default |
 | --- | --- | --- |
@@ -68,10 +68,10 @@ Run `/config` and find Hitodama, or set it under `pluginConfigs.hitodama.options
 
 Hitodama makes no network requests and sends nothing anywhere. What it touches:
 
-- **Files:** reads and writes only `~/.claude/hitodama/`: `pet.json` (the pet and its journal), `history.json` (past lives and seen characters) and `seen/<session>.json` (one small file per session, so sessions can tell who has the pet; mods cannot delete files, so old ones stay until you remove them).
+- **Files:** reads and writes only `~/.claude/hitodama/`: `pet.json` (the pet, its journal, its statistics with the models, effort levels and token counts, and the session ids whose events it has applied), `history.json` (past lives and seen characters) and `seen/<session>.json` (one small file per session, so sessions can tell who has the pet; mods cannot delete files, so old ones stay until you remove them).
 - **Session data:** the session id (to name its file), the name of the repository or working folder (shown in the pane and in your other sessions), the model name, effort level, context fill percentage, five-hour usage percentage and reset time, the number of reply tokens, helper and failed tool counts, aborted turns, compactions, and when you last typed. It never reads your prompts, replies, files or transcript.
-- **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either, or when it is not an absolute path, it does nothing.
-- **Processes:** runs `date +%z` once per session (`/bin/date` or `/usr/bin/date`, the one on `PATH` only where neither exists) to learn your local UTC offset for bedtimes; without it, it takes the offset the runtime reports.
+- **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either, or when it is not an absolute path, it writes one line saying so to the transcript and does nothing else.
+- **Processes:** runs `date +%z` once per session (`/bin/date`, then `/usr/bin/date`, then the one on `PATH`, each tried only when the one before gave no offset) to learn your local UTC offset for bedtimes; without it, it takes the offset the runtime reports.
 - **Sessions:** only sessions with a person at the prompt take part; `claude -p` runs and the SDK leave the pet alone.
 - **Notifications:** when the pet calls, throws a tantrum or dies and you have not typed for a minute.
 

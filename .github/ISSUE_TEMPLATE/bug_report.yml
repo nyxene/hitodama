@@ -35,5 +35,5 @@ body:
     id: state
     attributes:
       label: Pet state (optional)
-      description: The contents of ~/.claude/hitodama/pet.json, if the bug is about the pet itself. It holds only the pet and its journal.
+      description: The contents of ~/.claude/hitodama/pet.json, if the bug is about the pet itself. Besides the pet and its journal it holds session ids and play statistics (models, effort levels, token counts); remove what you would rather not post.
       render: json

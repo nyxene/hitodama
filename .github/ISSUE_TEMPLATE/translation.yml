@@ -1,0 +1,24 @@
+name: Translation fix
+description: A wrong or clumsy line in one of the interface languages
+labels: ["scope:i18n"]
+body:
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options: [English, Русский, 中文, 日本語, 한국어, Español, Português, Deutsch, Français]
+    validations:
+      required: true
+  - type: textarea
+    id: line
+    attributes:
+      label: The line as shown
+      description: Quote it exactly, and say where it appears.
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: The fix
+    validations:
+      required: true

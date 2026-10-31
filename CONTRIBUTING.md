@@ -6,7 +6,7 @@ Hitodama is maintained by one person in their own time. These rules keep that su
 
 - **Bugs:** open an issue with the bug report template. Include the Hitodama and Claude Code versions and your terminal.
 - **Ideas:** open an issue with the feature request template. Expect many to be declined: Hitodama stays small, local and offline.
-- **Translations:** corrections to any language are welcome as issues; quote the line and the fix.
+- **Translations:** corrections to any language are welcome as issues, with the translation fix template.
 - **Security problems:** do not open an issue. Follow [SECURITY.md](SECURITY.md).
 
 There is no guaranteed response time.
@@ -24,7 +24,7 @@ Out of scope, and closed:
 
 ## Development setup
 
-Requires Claude Code 2.1.287 or newer, [jq](https://jqlang.org) to commit (the privacy hook and its gate need it), and [Bun](https://bun.sh) only to redraw the images (`bun scripts/art.ts` writes the icon and `assets/yokai.png` from the sprite code).
+Requires Claude Code 2.1.310 or newer, [jq](https://jqlang.org) to commit (the privacy hook and its gate need it), Node with `npx` to commit once the type check is on (it runs TypeScript 5.9.3 through `npx`, which downloads it the first time), and [Bun](https://bun.sh) only to redraw the images (`bun scripts/art.ts` writes the icon and `assets/yokai.png` from the sprite code).
 
 ```sh
 git clone https://github.com/nyxene/hitodama.git
@@ -33,7 +33,7 @@ scripts/setup.sh
 claude --plugin-dir .
 ```
 
-`setup.sh` copies the git hooks from main into `.git/hooks`; rerun it when `.githooks` changes on main. A hook path into the tree would run whatever hooks a checked-out branch carries. The hooks still run the checked-out branch's `scripts/gates.sh` and tests, so read a contributor's changes to `scripts/`, `.githooks/` and `tests/` before committing on their branch. Before every commit the hooks run `scripts/gates.sh`: `claude plugin validate --strict`, `claude plugin test`, `scripts/privacy.sh`, and a check that the privacy hook fires, plus a type check once Claude Code has laid its types in `.claude-plugin/types`. Those types appear the first time a session loads the mod with `--plugin-dir .`; until then `tsconfig.json` points at a missing file and the editor says so. CI runs the same gates without the type check. A session started with `--plugin-dir .` reloads the mod whenever you save a file.
+`setup.sh` copies the git hooks from main into `.git/hooks`; rerun it when `.githooks` changes on main. A hook path into the tree would run whatever hooks a checked-out branch carries. A checked-out branch still runs its own code: a Claude Code session runs its `.claude/settings.json` hook on every shell command and, with `--plugin-dir .`, its `hooks/`; the git hooks run its `scripts/gates.sh` and tests. So read a contributor's changes to `.claude/`, `hooks/`, `scripts/`, `.githooks/` and `tests/` before checking out their branch. `pre-commit` refuses commits on `main` (`HITODAMA_ALLOW_MAIN=1` overrides it once), then runs `scripts/gates.sh`: `claude plugin validate --strict`, `claude plugin test`, `scripts/privacy.sh`, a check that the privacy hook and `commit-msg` refuse what they should, plus a type check once Claude Code has laid its types in `.claude-plugin/types`. Those types appear the first time a session loads the mod with `--plugin-dir .`; until then `tsconfig.json` points at a missing file and the editor says so. CI runs the same gates without the type check. A session started with `--plugin-dir .` reloads the mod whenever you save a file.
 
 Pet data lives in `~/.claude/hitodama/`. Delete `pet.json` there to start over with a new egg.
 
