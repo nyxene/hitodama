@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/nyxene/hitodama/compare/v0.1.2...v0.2.0) (2026-10-31)
+
+
+### Added
+
+* the pet follows the weekly limit when there is no five-hour one, and stale limits and unread pet files no longer cost it ([#26](https://github.com/nyxene/hitodama/issues/26)) ([16cb6e5](https://github.com/nyxene/hitodama/commit/16cb6e5574a64713230b81949b186d65741f997b))
+
 ## [0.1.2](https://github.com/nyxene/hitodama/compare/v0.1.1...v0.1.2) (2026-10-31)
 
 
