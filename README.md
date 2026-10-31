@@ -12,7 +12,7 @@
 
 Every life starts as an egg on a small monochrome LCD. Five minutes later a soul flame hatches, and over about a week it grows through a child and a teen into one of six adult yokai from Japanese folklore, and one of them can turn into a secret seventh. Which one depends on how you look after it: feed it, clean up, put it to bed, answer its calls, stop its tantrums.
 
-It also lives off your session. Long context weighs down its backpack, a high effort setting makes it think hard alongside the model, helpers you start wait with it by the door, night work makes it grumpy, and hitting your five-hour usage limit puts it to sleep until the reset: it makes no calls and throws no tantrums, one already open waits, nothing can kill it, and you can still feed it. `/compact` is a relief. What it grows into depends only on its care and discipline mistakes; a bad mood from your session can still make it call for you.
+It also lives off your session. Long context weighs down its backpack, a high effort setting makes it think hard alongside the model, helpers you start wait with it by the door, night work makes it grumpy, and hitting your five-hour usage limit puts it to sleep until the reset: it makes no calls and throws no tantrums, one already open waits, nothing can kill it, and you can still feed it. `/compact` is a relief. What it grows into depends only on its care mistakes and its discipline; a bad mood from your session can still make it call for you.
 
 ## Install
 

@@ -135,7 +135,9 @@ test('at the five-hour limit an open call sends no notification on every tick', 
   // Timer ticks, not /hd: /hd counts as typing, and nobody is notified while typing.
   const s = await session($, on, { 'pet.json': JSON.stringify(p), 'seen/s2.json': JSON.stringify(limited) }, { timer: true })
   for (let i = 0; i < 5; i++) await s.timerTick()
-  expect(JSON.parse(s.writes['pet.json'] ?? '{}').call?.reason).toBe('hungry')
+  const saved = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
+  expect(saved.at).toBeGreaterThan(T0 + 4 * 3000) // the timer ticks ran, not only the one at session start
+  expect(saved.call?.reason).toBe('hungry')
   expect(notified).toBe(0)
 })
 
