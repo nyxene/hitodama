@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/nyxene/hitodama/compare/v0.2.0...v0.3.0) (2026-11-04)
+
+
+### Added
+
+* energy follows reply tokens and the pace of the usage limit, and comes back while no window is busy ([#29](https://github.com/nyxene/hitodama/issues/29)) ([ba56c7d](https://github.com/nyxene/hitodama/commit/ba56c7de2db6cdccdf6f40bc2285bbc608b74519))
+
 ## [0.2.0](https://github.com/nyxene/hitodama/compare/v0.1.2...v0.2.0) (2026-10-31)
 
 
