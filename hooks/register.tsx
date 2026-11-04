@@ -101,13 +101,23 @@ export const register: Register = (on, options) => {
     }
     // A history that does not read is not written over with less: the one in memory stands.
     const readHistory = async () => { const h = await readJson<unknown>(`${dir}/history.json`); return isHistory(h) ? h : history }
-    // A pet file that is there but does not read is left alone: the tick is skipped, never replaced by an egg.
+    // Mods cannot rename files, so a write can be cut short. Each write puts the spare copy first, then the pet file:
+    // a pet file that is there but does not read is replaced by the spare copy, at most one tick older. When neither
+    // reads, the tick is skipped, never replaced by an egg. A pet file that is gone means a new egg.
     const petPath = `${dir}/pet.json`
+    const sparePath = `${dir}/pet.prev.json`
     const readPet = async (): Promise<Pet | null> => {
       if (!(await $.fs.exists(petPath))) return null
       const p = await readJson<unknown>(petPath)
-      if (!isPet(p)) throw new Error(`${petPath} does not read as a pet; it is kept as it is until it reads again, is fixed or is removed`)
-      return p
+      if (isPet(p)) return p
+      const spare = await readJson<unknown>(sparePath)
+      if (isPet(spare)) return spare
+      throw new Error(`${petPath} does not read as a pet, nor does ${sparePath}; they are kept as they are until one reads again, is fixed or ${petPath} is removed`)
+    }
+    const writePet = async (p: Pet) => {
+      const text = JSON.stringify(p)
+      await $.fs.write(sparePath, text)
+      await $.fs.write(petPath, text)
     }
     // date from /bin, then /usr/bin, then PATH (NixOS), each only when the one before gave no offset; else the
     // runtime's offset.
@@ -225,7 +235,7 @@ export const register: Register = (on, options) => {
         }
         const kept = p.dead && now - p.dead.at > T.death.newEggSeconds * 1000 ? { ...newEgg(now, p.life + 1), applied: p.applied } : p
         // Known limit: the previous owner may write one more tick after ownership moves; fine while a tick is 3 seconds.
-        await $.fs.write(petPath, JSON.stringify(kept))
+        await writePet(kept)
         pet = kept
       } else pet = p
 
@@ -326,7 +336,8 @@ export const register: Register = (on, options) => {
     const tokens = e.usage?.output_tokens ?? 0
     const cut = e.isAborted || !e.usage // interrupted, or ended on an API error: what it streamed is not counted
     const cost = turnCost(win.model, tokens, win.load, !!pet?.asleep, paceOf(followed, now), cut)
-    push({ k: 'turn', cost, model: win.model, effort: win.effort, tokens, load: win.load })
+    // Night is when the turn was made, not when an owner applies it, which can be hours later.
+    push({ k: 'turn', cost, model: win.model, effort: win.effort, tokens, load: win.load, night: !!pet?.asleep })
     return res
   })
 

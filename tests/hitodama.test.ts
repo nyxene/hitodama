@@ -3,7 +3,7 @@ import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code
 
 import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
-import { act, advance, finishGame, isHistory, isPet, newEgg, step, turnCost, type Pet } from '../hooks/sim'
+import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type Pet } from '../hooks/sim'
 import { cells, scene } from '../hooks/sprites'
 import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Win } from '../hooks/view'
 
@@ -237,7 +237,7 @@ const child = () => { const p = newEgg(T0 - 71 * MIN, 1, 'yokai'); advance(p, T0
 // timer: the three-second tick runs once per timerTick(), and the animation frame once per frameTick(), instead of at once.
 // blits holds the length of every animation frame sent.
 async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean; timer?: boolean } = {}) {
-  const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, logs: string[] = [], blits: number[] = []
+  const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, order: string[] = [], logs: string[] = [], blits: number[] = []
   let now = T0
   const waiting: (() => void)[] = [], frames: (() => void)[] = []
   on('clock.now', () => ({ value: (now += 3000) }))
@@ -258,7 +258,7 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
     if (opts.listFails) throw new Error('listing failed')
     return { value: Object.keys(files).filter(n => n.startsWith('seen/')).map(n => ({ name: n.slice(5), kind: 'file', size: 1, mtimeMs: now, isLink: false })) }
   })
-  on('fs.write', (_, e) => { writes[e.path.slice(dir.length)] = e.text; return { value: undefined } })
+  on('fs.write', (_, e) => { writes[e.path.slice(dir.length)] = e.text; order.push(e.path.slice(dir.length)); return { value: undefined } })
   on('ui.log', (_, e) => { logs.push(e.text); return { value: undefined } })
   on('command.register', () => ({ value: { command: 'hd' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -269,7 +269,7 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
   const settle = () => new Promise<void>(done => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(done, 50))
   const timerTick = async () => { await settle(); waiting.shift()?.(); await settle() }
   const frameTick = async () => { await settle(); frames.shift()?.(); await settle() }
-  return { files, writes, logs, blits, hd: () => $.command.run(hd), timerTick, frameTick }
+  return { files, writes, order, logs, blits, hd: () => $.command.run(hd), timerTick, frameTick }
 }
 
 // Usage readings as session.measure brings them.
@@ -353,11 +353,52 @@ test('a pet file that does not read at session start, then a pet that does not k
   expect(await startUnread($, on, {})).toBe(1)
 })
 
-test('a pet file cut off mid-write is left as it is, said once, and never replaced by an egg', async ($, on) => {
+test('a pet file cut off mid-write with no spare copy is left as it is, said once, and never replaced by an egg', async ($, on) => {
   const s = await session($, on, { 'pet.json': '{"v":1,"life":' })
   for (let i = 0; i < 5; i++) await s.hd()
   expect(s.writes['pet.json']).toBeUndefined()
   expect(s.logs.filter(l => l.includes('pet.json')).length).toBe(1)
+})
+
+test('a pet file cut off mid-write gives way to the spare copy, and the pet goes on', async ($, on) => {
+  const p = child()
+  const s = await session($, on, { 'pet.json': JSON.stringify(p).slice(0, -1), 'pet.prev.json': JSON.stringify(p) })
+  await s.hd()
+  const saved = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
+  expect(saved.ch).toBe(p.ch)
+  expect(saved.at).toBeGreaterThan(p.at)
+  expect(s.logs).toEqual([])
+})
+
+test('every pet the owner writes goes to the spare copy first, the same', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.hd()
+  const pets = s.order.filter(f => f.startsWith('pet'))
+  expect(pets.slice(-2)).toEqual(['pet.prev.json', 'pet.json'])
+  expect(s.writes['pet.prev.json']).toBe(s.writes['pet.json'])
+})
+
+test('a session marks a turn made while the pet is awake as a day turn', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.timerTick()
+  await $.turn.start({ text: '', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', usage: usage(1000) })
+  await s.hd()
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events.flatMap(e => (e.k === 'turn' ? [e.night] : []))).toEqual([false])
+})
+
+test('a turn counts as made at night by when it was made, not when it is applied', () => {
+  const turn = (night?: boolean): Ev => ({ seq: 1, k: 'turn', cost: 0, model: 'm', effort: 'high', tokens: 0, load: 0, night })
+  const asleep = { ...child(), asleep: true, joy: 50 }
+  applyEvent(asleep, turn(false))
+  expect([asleep.joy, asleep.stats.nightTurns]).toEqual([50, 0]) // a day turn applied once it sleeps
+  const awake = { ...child(), joy: 50 }
+  applyEvent(awake, turn(true))
+  expect([awake.joy, awake.stats.nightTurns]).toEqual([49, 1])
+  const older = { ...child(), asleep: true, joy: 50 }
+  applyEvent(older, turn())
+  expect([older.joy, older.stats.nightTurns]).toEqual([49, 1]) // an older event with no mark: as before
 })
 
 test('the pane shows the pet the session has read', async ($, on) => {
