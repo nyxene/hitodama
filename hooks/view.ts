@@ -49,9 +49,20 @@ export function paceOf(l: Limit, now: number): number {
   return Math.max(T.pace.min, Math.min(T.pace.max, 1 + (l.limit - passed) / T.pace.perPoint))
 }
 
-// When any window was last active: now while one runs a turn or helpers, else its last input or finished turn.
-export const lastActive = (wins: Win[], now: number) =>
-  Math.max(...wins.map(w => (w.turn || w.agents > 0 ? now : Math.max(w.lastActivity, w.lastInput))))
+// When any window was last active: now while one runs a turn or helpers, else its last event (input, a finished turn,
+// a helper starting or ending). A turn or helpers whose end never came stop counting busyHours after that event.
+// ponytail: a single turn with no helpers running longer than busyHours counts as idle; a tool-call heartbeat would fix it.
+export const lastActive = (wins: Win[], now: number) => Math.max(...wins.map(w => {
+  const last = Math.max(w.lastActivity, w.lastInput)
+  return (w.turn || w.agents > 0) && now - last < T.rest.busyHours * 3_600_000 ? now : last
+}))
+
+// From when an awake pet rests: afterMinutes past the last activity. Activity since the pet last lived (livedTo:
+// typing, a press, a running turn) counts as at that time, so the first thing done after a long gap does not undo the
+// rest within it.
+// ponytail: windows keep only their latest event, so activity inside a gap counts from the gap's start.
+export const restFrom = (wins: Win[], now: number, livedTo: number) =>
+  Math.min(lastActive(wins, now), livedTo) + T.rest.afterMinutes * 60_000
 
 function left(ms: number) {
   const m = Math.max(0, Math.round(ms / 60_000))

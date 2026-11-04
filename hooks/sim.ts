@@ -270,7 +270,7 @@ export function applyEvent(p: Pet, e: Ev, t = p.at): void {
 export function turnCost(model: string, tokens: number, load: number, asleep: boolean, pace = 1): number {
   const m = Object.entries(T.turn.model).find(([k]) => model.toLowerCase().includes(k))?.[1] ?? 1
   const band = T.load.bands.filter(b => load >= b).length
-  return T.turn.per1kTokens * (tokens / 1000) * m * T.load.energyMul[band]! * (asleep ? T.night.energyMul : 1) * pace
+  return Math.min(T.turn.max, T.turn.per1kTokens * (tokens / 1000) * m * T.load.energyMul[band]! * (asleep ? T.night.energyMul : 1) * pace)
 }
 
 export type Act = 'eat' | 'snack' | 'game' | 'clean' | 'heal' | 'light' | 'scold'

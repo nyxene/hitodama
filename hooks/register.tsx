@@ -6,7 +6,7 @@ import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, scene } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, decide, lastActive, limitOf, paceOf, statsText, title, type Ctx, type LimitKind, type Win } from './view'
+import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -30,6 +30,7 @@ export const register: Register = (on, options) => {
   let frame = 0
   let scale = 1 // chosen by the terminal render from the pane size; blit frames must match it
   let shown = { scene: 'idle', night: false }
+  let followed: Limit = { limit: 0 } // the usage limit of all live windows at the last tick, which prices this window's turns
   // File work lives in the session.start closure: $ may not be passed to functions.
   let dir = '' // ~/.claude/hitodama, set on session start
   let io: { tick: (action?: (p: Pet, now: number) => void) => Promise<void>; flush: () => Promise<void> } | null = null
@@ -181,6 +182,7 @@ export const register: Register = (on, options) => {
           ? [{ ...w, lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
       const others = written.filter(w => now - w.alive < T.presence.staleAfterMinutes * 60_000)
       const fresh = [win, ...others]
+      followed = limitOf(fresh, now)
       const owner = [...fresh].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
       const isOwner = owner.sid === sid
 
@@ -191,11 +193,8 @@ export const register: Register = (on, options) => {
       }
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
-        const resting = limitOf(fresh, now).limit >= T.limits.hit
-        // Rest starts 15 minutes after the last activity. Activity since the last tick (typing, a press, a running
-        // turn) counts as at that tick, so the first thing done after a long gap does not undo the rest within it.
-        // ponytail: windows keep only their latest activity, so activity inside a gap counts from its start.
-        advance(p, now, hourAt, resting, Math.min(lastActive(fresh, now), p.at) + T.rest.afterMinutes * 60_000)
+        const resting = followed.limit >= T.limits.hit
+        advance(p, now, hourAt, resting, restFrom(fresh, now, p.at))
         for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
         }
@@ -294,9 +293,10 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('turn.start', ($, e, next) => {
+  on('turn.start', async ($, e, next) => {
     if (e.agentId) {
       win.agents += 1
+      win.lastActivity = await $.clock.now()
       push({ k: 'agent' })
     } else win.turn = true
     return next(e)
@@ -309,17 +309,20 @@ export const register: Register = (on, options) => {
     return yield* next(e)
   })
   on('turn.complete', async ($, e, next) => {
-    const res = await next(e)
-    if (e.agentId) {
-      win.agents = Math.max(0, win.agents - 1)
-      return res
+    // The turn or helper is over even when a hook below fails, or the window would count as busy.
+    let res: Awaited<ReturnType<typeof next>>
+    try {
+      res = await next(e)
+    } finally {
+      if (e.agentId) win.agents = Math.max(0, win.agents - 1)
+      else win.turn = false
+      win.lastActivity = await $.clock.now()
     }
-    win.turn = false
-    const now = await $.clock.now()
-    win.lastActivity = now
+    if (e.agentId) return res
+    const now = win.lastActivity
     if (e.isAborted) push({ k: 'abort' })
     const tokens = e.usage?.output_tokens ?? 0
-    const pace = paceOf(limitOf([win], now), now)
+    const pace = paceOf(followed, now)
     push({ k: 'turn', cost: turnCost(win.model, tokens, win.load, !!pet?.asleep, pace), model: win.model, effort: win.effort, tokens, load: win.load })
     return res
   })
