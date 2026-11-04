@@ -593,9 +593,38 @@ test('a running turn or helpers stop counting as activity two hours after the wi
 })
 
 test('rest starts 15 minutes after the last activity, and activity since the pet last lived counts as then', () => {
-  expect(restFrom([{ ...win, lastActivity: T0 - HOUR }], T0, T0 - 30 * MIN)).toBe(T0 - 45 * MIN)
-  expect(restFrom([{ ...win, lastActivity: T0 - HOUR, turn: true }], T0, T0 - 30 * MIN)).toBe(T0 - 15 * MIN)
-  expect(restFrom([{ ...win, lastInput: T0 - MIN }], T0, T0 - 30 * MIN)).toBe(T0 - 15 * MIN)
+  const from = (w: Partial<Win>) => restFrom(lastActive([{ ...win, ...w }], T0), T0 - 30 * MIN)
+  expect(from({ lastActivity: T0 - HOUR })).toBe(T0 - 45 * MIN)
+  expect(from({ lastActivity: T0 - HOUR, turn: true })).toBe(T0 - 15 * MIN)
+  expect(from({ lastInput: T0 - MIN })).toBe(T0 - 15 * MIN)
+})
+
+test('an interrupted turn, or one with no usage, costs at least half a point', () => {
+  expect(turnCost('claude-opus-5-5', 0, 0, false, 1, true)).toBe(0.5)
+  expect(Math.round(turnCost('claude-opus-5-5', 6000, 0, false, 1, true) * 1000) / 1000).toBe(1.68)
+  expect(turnCost('claude-opus-5-5', 0, 0, false)).toBe(0)
+})
+
+test('a session charges the least for a turn interrupted with no usage', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.timerTick()
+  await $.turn.start({ text: '', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't1', reason: 'aborted' })
+  await s.hd()
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events.flatMap(e => (e.k === 'turn' ? [e.cost] : []))).toEqual([0.5])
+})
+
+test('a turn starting with no prompt and every tool call count as activity', async ($, on) => {
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true })
+  const last = async () => { await s.timerTick(); return (JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).lastActivity }
+  const before = await last()
+  await $.turn.start({ text: '', turnId: 't1' })
+  const started = await last()
+  expect(started).toBeGreaterThan(before)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'u1', command: 'true' } as never)
+  expect(await last()).toBeGreaterThan(started)
 })
 
 test('a turn whose completion fails still ends, and a helper starting counts as activity', async ($, on) => {

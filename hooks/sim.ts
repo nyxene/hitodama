@@ -127,7 +127,7 @@ function scheduleTantrum(p: Pet, t: number) {
 
 // One time step. offline: Claude was closed, so everything is slower and there are no calls or tantrums.
 // resting: the usage limit the pet follows is hit, so until the reset there are no calls or tantrums either.
-// restFrom: from this time no window is active, so an awake pet gets its energy back; Infinity while one is.
+// restFrom: from this time an awake pet gets its energy back instead of tiring (restFrom in view.ts); Infinity: never.
 export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boolean, resting = false, restFrom = Infinity): void {
   if (p.dead) return
   const h = dtMs / HOUR
@@ -267,10 +267,12 @@ export function applyEvent(p: Pet, e: Ev, t = p.at): void {
 }
 
 // pace: how far ahead of its usage limit the session runs (paceOf in view.ts), 1 when on pace or with no limit.
-export function turnCost(model: string, tokens: number, load: number, asleep: boolean, pace = 1): number {
+// cut: the turn was interrupted or ended on an API error, so its tokens may be uncounted; it costs at least minCut.
+export function turnCost(model: string, tokens: number, load: number, asleep: boolean, pace = 1, cut = false): number {
   const m = Object.entries(T.turn.model).find(([k]) => model.toLowerCase().includes(k))?.[1] ?? 1
   const band = T.load.bands.filter(b => load >= b).length
-  return Math.min(T.turn.max, T.turn.per1kTokens * (tokens / 1000) * m * T.load.energyMul[band]! * (asleep ? T.night.energyMul : 1) * pace)
+  const cost = Math.min(T.turn.max, T.turn.per1kTokens * (tokens / 1000) * m * T.load.energyMul[band]! * (asleep ? T.night.energyMul : 1) * pace)
+  return cut ? Math.max(T.turn.minCut, cost) : cost
 }
 
 export type Act = 'eat' | 'snack' | 'game' | 'clean' | 'heal' | 'light' | 'scold'

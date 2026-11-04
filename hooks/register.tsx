@@ -126,13 +126,14 @@ export const register: Register = (on, options) => {
     let roomCheckedAt = 0
     let busy = Promise.resolve()
 
-    const refresh = async (now: number, isOwner: boolean, fresh: Win[], ownerRoom: string) => {
+    // active: when any window was last active, as the tick found it.
+    const refresh = async (now: number, isOwner: boolean, ownerRoom: string, active: number) => {
       const p = pet
       if (!p) return
-      const limit = limitOf(fresh, now)
+      const limit = followed
       const ctx: Ctx = {
         ...limit, now, isOwner, ownerRoom, anim,
-        idleMin: (now - lastActive(fresh, now)) / 60_000,
+        idleMin: (now - active) / 60_000,
       }
       const d = game && isOwner ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
       const night = p.asleep && isOwner
@@ -183,6 +184,7 @@ export const register: Register = (on, options) => {
       const others = written.filter(w => now - w.alive < T.presence.staleAfterMinutes * 60_000)
       const fresh = [win, ...others]
       followed = limitOf(fresh, now)
+      const active = lastActive(fresh, now)
       const owner = [...fresh].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
       const isOwner = owner.sid === sid
 
@@ -194,7 +196,7 @@ export const register: Register = (on, options) => {
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
         const resting = followed.limit >= T.limits.hit
-        advance(p, now, hourAt, resting, restFrom(fresh, now, p.at))
+        advance(p, now, hourAt, resting, restFrom(active, p.at))
         for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
         }
@@ -228,7 +230,7 @@ export const register: Register = (on, options) => {
       } else pet = p
 
       win.events = win.events.filter(ev => ev.seq > (pet!.applied[sid] ?? 0))
-      await refresh(now, isOwner, fresh, owner.room)
+      await refresh(now, isOwner, owner.room, active)
     }
     // Timer ticks and presses run one at a time so files are never read and written in a race.
     // A tick can fail once in passing (a file read while another window writes it); three in a row are said once.
@@ -294,9 +296,9 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {
+    win.lastActivity = await $.clock.now() // a turn may start with no prompt: a background task, a scheduled run
     if (e.agentId) {
       win.agents += 1
-      win.lastActivity = await $.clock.now()
       push({ k: 'agent' })
     } else win.turn = true
     return next(e)
@@ -322,13 +324,15 @@ export const register: Register = (on, options) => {
     const now = win.lastActivity
     if (e.isAborted) push({ k: 'abort' })
     const tokens = e.usage?.output_tokens ?? 0
-    const pace = paceOf(followed, now)
-    push({ k: 'turn', cost: turnCost(win.model, tokens, win.load, !!pet?.asleep, pace), model: win.model, effort: win.effort, tokens, load: win.load })
+    const cut = e.isAborted || !e.usage // interrupted, or ended on an API error: what it streamed is not counted
+    const cost = turnCost(win.model, tokens, win.load, !!pet?.asleep, paceOf(followed, now), cut)
+    push({ k: 'turn', cost, model: win.model, effort: win.effort, tokens, load: win.load })
     return res
   })
 
   on('tool.call', async ($, e, next) => {
     const res = await next(e)
+    win.lastActivity = await $.clock.now() // a long turn shows it is still working
     if (!e.agentId && res.deny === undefined) {
       win.errors = res.isError ? win.errors + 1 : 0
       if (win.errors === T.mood.errorStreak) push({ k: 'errors' })

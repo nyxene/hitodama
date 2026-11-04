@@ -13,9 +13,11 @@ export const tuning = {
 
   turn: {
     // energy cost of a model turn: per thousand reply tokens (thinking included, so effort shows in it), times the model;
-    // max: the most one turn can cost, so a single long reply cannot empty it
+    // max: the most one turn can cost, so a single long reply cannot empty it; minCut: the least an interrupted turn,
+    // or one that ended on an API error, costs, as its tokens may go uncounted
     per1kTokens: 0.2,
     max: 15,
+    minCut: 0.5,
     model: { haiku: 0.6, sonnet: 1, opus: 1.4, fable: 1.8 } as Record<string, number>,
   },
   load: { bands: [50, 80, 90], energyMul: [1, 1.3, 1.7, 2.2], compactJoy: 8 },
