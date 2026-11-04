@@ -12,14 +12,21 @@ export const tuning = {
   sick: { hpPerHour: 2 },
 
   turn: {
-    // energy cost of one model turn
-    energy: 0.8,
-    effort: { low: 0.5, medium: 1, high: 1.5, xhigh: 2, max: 3 } as Record<string, number>,
+    // energy cost of a model turn: per thousand reply tokens (thinking included, so effort shows in it), times the model;
+    // max: the most one turn can cost, so a single long reply cannot empty it; minCut: the least an interrupted turn,
+    // or one that ended on an API error, costs, as its tokens may go uncounted
+    per1kTokens: 0.2,
+    max: 15,
+    minCut: 0.5,
     model: { haiku: 0.6, sonnet: 1, opus: 1.4, fable: 1.8 } as Record<string, number>,
   },
   load: { bands: [50, 80, 90], energyMul: [1, 1.3, 1.7, 2.2], compactJoy: 8 },
   night: { energyMul: 1.5, joyPerTurn: -1 }, // work while it sleeps
   limits: { tired: 80, hit: 100 }, // percent of the usage limit the pet follows
+  pace: { perPoint: 25, min: 0.5, max: 2 }, // the pace of the usage limit as a factor on turn cost: paceOf in view.ts
+  // Awake, with no activity in any window, energy comes back, slower than sleep. A running turn or helpers count as
+  // activity for at most busyHours after the window's last event, in case the end of one never came.
+  rest: { afterMinutes: 15, perHour: 10, busyHours: 2 },
   mood: { gameWin: 15, errorStreak: 3, errorJoy: -4, abort: -2, scoldNoReason: -5 },
   care: { meal: 35, snackJoy: 10, heal: 40, cure: 50, gameEnergy: -5 }, // a dose adds heal; health at cure ends the illness
   poop: { everyAwakeHours: 3, max: 4, healthPerHourEach: 3 },

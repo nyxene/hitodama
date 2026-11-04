@@ -3,9 +3,9 @@ import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code
 
 import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
-import { act, advance, finishGame, isHistory, isPet, newEgg, step, type Pet } from '../hooks/sim'
+import { act, advance, finishGame, isHistory, isPet, newEgg, step, turnCost, type Pet } from '../hooks/sim'
 import { cells, scene } from '../hooks/sprites'
-import { bar, decide, limitOf, statsText, title, type Ctx, type Win } from '../hooks/view'
+import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
 const T0 = Date.UTC(2026, 9, 24, 12) // noon UTC
@@ -519,4 +519,198 @@ test('a tick that cannot list the windows forgets none of them', async ($, on) =
   const s = await session($, on, { 'pet.json': JSON.stringify({ ...child(), applied: { s2: 5 } }) }, { listFails: true })
   await s.hd()
   expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).applied.s2).toBe(5)
+})
+
+test('a turn costs energy by its reply tokens and model, whatever the effort', () => {
+  const r = (n: number) => Math.round(n * 1000) / 1000
+  expect(r(turnCost('claude-opus-5-5', 6000, 0, false))).toBe(1.68) // what an average Opus turn cost before at high effort
+  expect(turnCost('claude-opus-5-5', 0, 0, false)).toBe(0)
+  expect(r(turnCost('claude-sonnet-5-5', 1000, 0, false))).toBe(0.2)
+  expect(r(turnCost('claude-sonnet-5-5', 1000, 95, true, 2))).toBe(r(0.2 * 2.2 * 1.5 * 2))
+})
+
+test('the pace of the usage limit: ahead of it turns tire more, behind it less, within 0.5 and 2', () => {
+  const week = (used: number, passedHours: number) =>
+    paceOf({ limit: used, limitKind: 'seven_day', limitResetsAt: new Date(T0 + 7 * DAY - passedHours * HOUR).toISOString() }, T0)
+  expect(Math.round(week(5, 7) * 1000) / 1000).toBe(1.033) // 5% used, 4.2% of the week passed
+  expect(week(50, 0)).toBe(2)
+  expect(week(10, 84)).toBe(0.5)
+  expect(week(50, 84)).toBe(1)
+  expect(paceOf({ limit: 50, limitKind: 'five_hour' }, T0)).toBe(1) // no reset time: the window's start is unknown
+  expect(paceOf({ limit: 0 }, T0)).toBe(1)
+})
+
+test('an awake pet regains energy only from the moment no window is active', () => {
+  const p = child()
+  p.en = 50
+  for (let t = T0; t < T0 + HOUR; t += MIN) step(p, t + MIN, MIN, utc(t + MIN), false, false, T0 + 30 * MIN)
+  expect(Math.round(p.en)).toBe(50 - 4 + 5) // half an hour awake at 8 an hour, then half an hour resting at 10
+})
+
+test('a window running a turn or helpers is active now, else from its last input or finished turn', () => {
+  expect(lastActive([{ ...win, lastInput: T0 - HOUR, lastActivity: T0 - MIN }, { ...win, lastInput: T0 - 2 * MIN }], T0)).toBe(T0 - MIN)
+  expect(lastActive([{ ...win, lastActivity: T0 - HOUR }, { ...win, turn: true, lastInput: T0 - HOUR }], T0)).toBe(T0)
+  expect(lastActive([{ ...win, agents: 1, lastActivity: T0 - HOUR }], T0)).toBe(T0)
+})
+
+const usage = (output_tokens: number) => ({ model: 'm', input_tokens: 0, output_tokens, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })
+
+test('a session prices its turns by reply tokens and the pace of the limit it reports', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.timerTick() // the tick a session runs as it starts, so each turn below lands in the tick of its own /hd
+  const costs = async (id: string) => {
+    await $.turn.start({ text: '', turnId: id })
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: id, reason: 'answer', usage: usage(5000) })
+    await s.hd()
+    return (JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events.flatMap(e => (e.k === 'turn' ? [Math.round(e.cost * 1000) / 1000] : []))
+  }
+  expect(await costs('t1')).toEqual([1]) // 5 thousand tokens of an unknown model, no limit
+  await measure($, { kind: 'seven_day', percentUsed: 50, resetsAt: new Date(T0 + 7 * DAY).toISOString() })
+  await s.hd() // the tick that takes in the reading
+  expect(await costs('t2')).toEqual([2]) // half the week used as it starts: the most a turn can cost
+})
+
+test('a turn is priced by the limit of all live windows, as the pane shows it', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  const s2: Win = { ...win, sid: 's2', alive: T0 + HOUR, limit: 50, limitKind: 'seven_day', limitResetsAt: new Date(T0 + 7 * DAY).toISOString() }
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()), 'seen/s2.json': JSON.stringify(s2) })
+  await s.timerTick()
+  await $.turn.start({ text: '', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', usage: usage(5000) })
+  await s.hd()
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events.flatMap(e => (e.k === 'turn' ? [Math.round(e.cost * 1000) / 1000] : []))).toEqual([2])
+})
+
+test('one turn costs at most the cap, however long its reply', () => {
+  expect(turnCost('claude-opus-5-5', 60_000, 95, true, 2)).toBe(15)
+})
+
+test('a running turn or helpers stop counting as activity two hours after the window last did anything', () => {
+  expect(lastActive([{ ...win, agents: 1, lastActivity: T0 - HOUR }], T0)).toBe(T0)
+  expect(lastActive([{ ...win, agents: 1, lastActivity: T0 - 3 * HOUR }], T0)).toBe(T0 - 3 * HOUR)
+  expect(lastActive([{ ...win, turn: true, lastInput: T0 - 3 * HOUR }], T0)).toBe(T0 - 3 * HOUR)
+})
+
+test('rest starts 15 minutes after the last activity, and activity since the pet last lived counts as then', () => {
+  const from = (w: Partial<Win>) => restFrom(lastActive([{ ...win, ...w }], T0), T0 - 30 * MIN)
+  expect(from({ lastActivity: T0 - HOUR })).toBe(T0 - 45 * MIN)
+  expect(from({ lastActivity: T0 - HOUR, turn: true })).toBe(T0 - 15 * MIN)
+  expect(from({ lastInput: T0 - MIN })).toBe(T0 - 15 * MIN)
+})
+
+test('an interrupted turn, or one with no usage, costs at least half a point', () => {
+  expect(turnCost('claude-opus-5-5', 0, 0, false, 1, true)).toBe(0.5)
+  expect(Math.round(turnCost('claude-opus-5-5', 6000, 0, false, 1, true) * 1000) / 1000).toBe(1.68)
+  expect(turnCost('claude-opus-5-5', 0, 0, false)).toBe(0)
+})
+
+test('a session charges the least for a turn interrupted with no usage', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.timerTick()
+  await $.turn.start({ text: '', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't1', reason: 'aborted' })
+  await s.hd()
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events.flatMap(e => (e.k === 'turn' ? [e.cost] : []))).toEqual([0.5])
+})
+
+test('a turn starting with no prompt and every tool call count as activity', async ($, on) => {
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true })
+  const last = async () => { await s.timerTick(); return (JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).lastActivity }
+  const before = await last()
+  await $.turn.start({ text: '', turnId: 't1' })
+  const started = await last()
+  expect(started).toBeGreaterThan(before)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'u1', command: 'true' } as never)
+  expect(await last()).toBeGreaterThan(started)
+})
+
+test('a turn whose completion fails still ends, and a helper starting counts as activity', async ($, on) => {
+  on('turn.complete', () => { throw new Error('a hook below failed') })
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true })
+  const seen = () => JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win
+  await $.turn.start({ text: '', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' }).catch(() => {})
+  await s.timerTick() // a timer tick, not /hd, which counts as input
+  const ended = seen()
+  expect(ended.turn).toBe(false)
+  await $.turn.start({ text: '', turnId: 't2', agentId: 'a1' })
+  await s.timerTick()
+  expect(seen().lastActivity).toBeGreaterThan(ended.lastActivity)
+})
+
+// A child last lived `away` ago with half its energy, the window s2 alongside it, and this session's own saved file.
+async function hourAway($: Engine, on: On, s2: Partial<Win>, own: Partial<Win> = {}, away = HOUR) {
+  const other: Win = { ...win, sid: 's2', alive: T0 + HOUR, ...s2 } // alive for as long as the test's clock runs
+  const s = await session($, on, {
+    'pet.json': JSON.stringify({ ...child(), en: 50, at: T0 - away }),
+    'seen/s2.json': JSON.stringify(other), 'seen/s1.json': JSON.stringify({ ...win, sid: 's1', ...own }),
+  })
+  await s.timerTick() // the tick a session runs as it starts
+  const p = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
+  return { en: p.en, hours: (p.at - (T0 - away)) / HOUR }
+}
+
+test('an hour with no window active gives an awake pet its energy back', async ($, on) => {
+  const { en, hours } = await hourAway($, on, {})
+  expect(Math.round((en - 50) / hours)).toBe(10)
+})
+
+test('rest starts 15 minutes after the last activity', async ($, on) => {
+  const { en, hours } = await hourAway($, on, { lastActivity: T0 - HOUR - 5 * MIN })
+  // Ten minutes in the pocket at 8 × 0.3 an hour, then rest.
+  expect(Math.abs(en - (50 - 0.4 + 10 * (hours - 1 / 6)))).toBeLessThan(0.05)
+})
+
+// Lived up to the session's start, with s2 last active an hour before.
+test('a pet whose windows have been quiet for an hour rests', async ($, on) => {
+  expect((await hourAway($, on, { lastActivity: T0 - HOUR }, {}, 0)).en).toBeGreaterThan(50)
+})
+
+test('a turn running in another window keeps it from resting', async ($, on) => {
+  expect((await hourAway($, on, { lastActivity: T0 - HOUR, turn: true }, {}, 0)).en).toBeLessThan(50)
+})
+
+test('what is done right after a long gap does not undo the rest within it', async ($, on) => {
+  const { en, hours } = await hourAway($, on, {}, { lastInput: T0 + HOUR }) // input stamped at the end of the gap
+  expect(Math.abs(en - (50 - 0.6 + 10 * (hours - 1 / 4)))).toBeLessThan(0.05) // rests from 15 minutes into it
+})
+
+test('a resumed session forgets the helpers its old process left running', async ($, on) => {
+  const { en, hours } = await hourAway($, on, {}, { agents: 1 })
+  expect(Math.round((en - 50) / hours)).toBe(10) // rests all along, not only from 15 minutes in
+})
+
+// Whether the pane shows `text` for a child: this window quiet for four hours, s2 last active `s2Quiet` ago, running a
+// turn or not.
+async function quietPane($: Engine, on: On, s2Quiet: number, busy: boolean, text: RegExp) {
+  // Typed in both four hours ago, so this window, first by name, holds the pet.
+  const s = await session($, on, {
+    'pet.json': JSON.stringify(child()),
+    'seen/s1.json': JSON.stringify({ ...win, sid: 's1', lastInput: T0 - 4 * HOUR, lastActivity: T0 - 4 * HOUR }),
+    'seen/s2.json': JSON.stringify({ ...win, sid: 's2', alive: T0 + HOUR, turn: busy, lastInput: T0 - 4 * HOUR, lastActivity: T0 - s2Quiet }),
+  })
+  await s.timerTick()
+  const ui = await pane($, 'terminal', 70, 60)
+  const shown = (await ui.find({ type: 'Text', text })) !== undefined
+  await ui.unmount()
+  return shown
+}
+
+test('four quiet hours make it doze off', async ($, on) => {
+  expect(await quietPane($, on, 4 * HOUR, false, /Dozed off/)).toBe(true)
+})
+
+test('an hour and a half of quiet bores it', async ($, on) => {
+  expect(await quietPane($, on, 90 * MIN, false, /Bored/)).toBe(true)
+})
+
+test('a turn running in another window keeps it from getting bored', async ($, on) => {
+  expect(await quietPane($, on, 90 * MIN, true, /Bored/)).toBe(false)
+})
+
+test('a turn that has given no sign for four hours no longer keeps it awake', async ($, on) => {
+  expect(await quietPane($, on, 4 * HOUR, true, /Dozed off/)).toBe(true)
 })

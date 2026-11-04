@@ -6,7 +6,7 @@ import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, scene } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, decide, limitOf, statsText, title, type Ctx, type LimitKind, type Win } from './view'
+import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -30,6 +30,7 @@ export const register: Register = (on, options) => {
   let frame = 0
   let scale = 1 // chosen by the terminal render from the pane size; blit frames must match it
   let shown = { scene: 'idle', night: false }
+  let followed: Limit = { limit: 0 } // the usage limit of all live windows at the last tick, which prices this window's turns
   // File work lives in the session.start closure: $ may not be passed to functions.
   let dir = '' // ~/.claude/hitodama, set on session start
   let io: { tick: (action?: (p: Pet, now: number) => void) => Promise<void>; flush: () => Promise<void> } | null = null
@@ -125,13 +126,14 @@ export const register: Register = (on, options) => {
     let roomCheckedAt = 0
     let busy = Promise.resolve()
 
-    const refresh = async (now: number, isOwner: boolean, fresh: Win[], ownerRoom: string) => {
+    // active: when any window was last active, as the tick found it.
+    const refresh = async (now: number, isOwner: boolean, ownerRoom: string, active: number) => {
       const p = pet
       if (!p) return
-      const limit = limitOf(fresh, now)
+      const limit = followed
       const ctx: Ctx = {
         ...limit, now, isOwner, ownerRoom, anim,
-        idleMin: (now - Math.max(...fresh.map(w => Math.max(w.lastActivity, w.lastInput)))) / 60_000,
+        idleMin: (now - active) / 60_000,
       }
       const d = game && isOwner ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
       const night = p.asleep && isOwner
@@ -181,6 +183,8 @@ export const register: Register = (on, options) => {
           ? [{ ...w, lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
       const others = written.filter(w => now - w.alive < T.presence.staleAfterMinutes * 60_000)
       const fresh = [win, ...others]
+      followed = limitOf(fresh, now)
+      const active = lastActive(fresh, now)
       const owner = [...fresh].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
       const isOwner = owner.sid === sid
 
@@ -191,8 +195,8 @@ export const register: Register = (on, options) => {
       }
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
-        const resting = limitOf(fresh, now).limit >= T.limits.hit
-        advance(p, now, hourAt, resting)
+        const resting = followed.limit >= T.limits.hit
+        advance(p, now, hourAt, resting, restFrom(active, p.at))
         for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
         }
@@ -226,7 +230,7 @@ export const register: Register = (on, options) => {
       } else pet = p
 
       win.events = win.events.filter(ev => ev.seq > (pet!.applied[sid] ?? 0))
-      await refresh(now, isOwner, fresh, owner.room)
+      await refresh(now, isOwner, owner.room, active)
     }
     // Timer ticks and presses run one at a time so files are never read and written in a race.
     // A tick can fail once in passing (a file read while another window writes it); three in a row are said once.
@@ -242,7 +246,8 @@ export const register: Register = (on, options) => {
     // reads it, which drops them if the pet has no record of the session. Events of this run are never held back.
     const saved = await readPet().catch(() => undefined)
     const known = saved === undefined || saved?.applied[sid] !== undefined
-    win = { ...win, ...kept, sid, turn: false, ...(known ? {} : { events: [] }) }
+    // A resumed session's turn and helpers died with its old process, and their ends never come.
+    win = { ...win, ...kept, sid, turn: false, agents: 0, ...(known ? {} : { events: [] }) }
     unchecked = saved === undefined ? win.seq : 0
     history = await readHistory()
     io = {
@@ -290,7 +295,8 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('turn.start', ($, e, next) => {
+  on('turn.start', async ($, e, next) => {
+    win.lastActivity = await $.clock.now() // a turn may start with no prompt: a background task, a scheduled run
     if (e.agentId) {
       win.agents += 1
       push({ k: 'agent' })
@@ -305,20 +311,28 @@ export const register: Register = (on, options) => {
     return yield* next(e)
   })
   on('turn.complete', async ($, e, next) => {
-    const res = await next(e)
-    if (e.agentId) {
-      win.agents = Math.max(0, win.agents - 1)
-      return res
+    // The turn or helper is over even when a hook below fails, or the window would count as busy.
+    let res: Awaited<ReturnType<typeof next>>
+    try {
+      res = await next(e)
+    } finally {
+      if (e.agentId) win.agents = Math.max(0, win.agents - 1)
+      else win.turn = false
+      win.lastActivity = await $.clock.now()
     }
-    win.turn = false
-    win.lastActivity = await $.clock.now()
+    if (e.agentId) return res
+    const now = win.lastActivity
     if (e.isAborted) push({ k: 'abort' })
-    push({ k: 'turn', cost: turnCost(win.model, win.effort, win.load, !!pet?.asleep), model: win.model, effort: win.effort, tokens: e.usage?.output_tokens ?? 0, load: win.load })
+    const tokens = e.usage?.output_tokens ?? 0
+    const cut = e.isAborted || !e.usage // interrupted, or ended on an API error: what it streamed is not counted
+    const cost = turnCost(win.model, tokens, win.load, !!pet?.asleep, paceOf(followed, now), cut)
+    push({ k: 'turn', cost, model: win.model, effort: win.effort, tokens, load: win.load })
     return res
   })
 
   on('tool.call', async ($, e, next) => {
     const res = await next(e)
+    win.lastActivity = await $.clock.now() // a long turn shows it is still working
     if (!e.agentId && res.deny === undefined) {
       win.errors = res.isError ? win.errors + 1 : 0
       if (win.errors === T.mood.errorStreak) push({ k: 'errors' })

@@ -127,7 +127,8 @@ function scheduleTantrum(p: Pet, t: number) {
 
 // One time step. offline: Claude was closed, so everything is slower and there are no calls or tantrums.
 // resting: the usage limit the pet follows is hit, so until the reset there are no calls or tantrums either.
-export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boolean, resting = false): void {
+// restFrom: from this time an awake pet gets its energy back instead of tiring (restFrom in view.ts); Infinity: never.
+export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boolean, resting = false, restFrom = Infinity): void {
   if (p.dead) return
   const h = dtMs / HOUR
   const st = stageOf(p)
@@ -164,7 +165,9 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
 
   p.sat = clamp(p.sat - T.decayPerHour.satiety * mul * h)
   p.joy = clamp(p.joy - T.decayPerHour.joy * mul * h)
-  p.en = clamp(p.asleep ? p.en + T.sleepRecoverPerHour * h : p.en - T.decayPerHour.energy * mul * h)
+  p.en = clamp(p.asleep ? p.en + T.sleepRecoverPerHour * h
+    : t - dtMs >= restFrom ? p.en + T.rest.perHour * h
+    : p.en - T.decayPerHour.energy * mul * h)
 
   if (!p.asleep) {
     p.poopClock += h * off
@@ -229,13 +232,13 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
 }
 
 // Catches up from p.at to now in one-minute steps. A gap longer than staleAfter means "in the pocket".
-export function advance(p: Pet, now: number, hourAt: (t: number) => number, resting = false): void {
+export function advance(p: Pet, now: number, hourAt: (t: number) => number, resting = false, restFrom = Infinity): void {
   const gap = now - p.at
   const offline = gap > T.presence.staleAfterMinutes * MIN
   const from = Math.max(p.at, now - 30 * 24 * HOUR)
   for (let t = from; t < now; t += MIN) {
     const dt = Math.min(MIN, now - t)
-    step(p, t + dt, dt, hourAt(t + dt), offline, resting)
+    step(p, t + dt, dt, hourAt(t + dt), offline, resting, restFrom)
   }
   p.at = now
 }
@@ -263,10 +266,13 @@ export function applyEvent(p: Pet, e: Ev, t = p.at): void {
   }
 }
 
-export function turnCost(model: string, effort: string, load: number, asleep: boolean): number {
+// pace: how far ahead of its usage limit the session runs (paceOf in view.ts), 1 when on pace or with no limit.
+// cut: the turn was interrupted or ended on an API error, so its tokens may be uncounted; it costs at least minCut.
+export function turnCost(model: string, tokens: number, load: number, asleep: boolean, pace = 1, cut = false): number {
   const m = Object.entries(T.turn.model).find(([k]) => model.toLowerCase().includes(k))?.[1] ?? 1
   const band = T.load.bands.filter(b => load >= b).length
-  return T.turn.energy * (T.turn.effort[effort] ?? 1) * m * T.load.energyMul[band]! * (asleep ? T.night.energyMul : 1)
+  const cost = Math.min(T.turn.max, T.turn.per1kTokens * (tokens / 1000) * m * T.load.energyMul[band]! * (asleep ? T.night.energyMul : 1) * pace)
+  return cut ? Math.max(T.turn.minCut, cost) : cost
 }
 
 export type Act = 'eat' | 'snack' | 'game' | 'clean' | 'heal' | 'light' | 'scold'
