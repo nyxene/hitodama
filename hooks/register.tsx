@@ -99,25 +99,40 @@ export const register: Register = (on, options) => {
     const readJson = async <V,>(path: string): Promise<V | null> => {
       try { return JSON.parse(await $.fs.read(path)) as V } catch { return null }
     }
-    // A history that does not read is not written over with less: the one in memory stands.
-    const readHistory = async () => { const h = await readJson<unknown>(`${dir}/history.json`); return isHistory(h) ? h : history }
-    // Mods cannot rename files, so a write can be cut short. Each write puts the spare copy first, then the pet file:
-    // a pet file that is there but does not read is replaced by the spare copy, at most one tick older. When neither
-    // reads, the tick is skipped, never replaced by an egg. A pet file that is gone means a new egg.
+    // Mods cannot rename files, so a write can be cut short (a window closing, a second writer). The pet and the
+    // history are written to a spare copy first, then to their own file. One that is there but does not read gives
+    // way to its spare copy, written just before it, and the line says so once.
+    const spareOf = (path: string) => path.replace(/\.json$/, '.prev.json')
+    const writeSafe = async (path: string, value: unknown) => {
+      const text = JSON.stringify(value)
+      await $.fs.write(spareOf(path), text)
+      await $.fs.write(path, text)
+    }
+    const told = new Set<string>()
+    // The file when it reads, else its spare copy when that reads; null when the file is gone or neither reads.
+    const readSafe = async <V,>(path: string, ok: (v: unknown) => v is V): Promise<V | null> => {
+      if (!(await $.fs.exists(path))) return null
+      const v = await readJson<unknown>(path)
+      if (ok(v)) { told.delete(path); return v }
+      const spare = await readJson<unknown>(spareOf(path))
+      if (!ok(spare)) return null
+      if (!told.has(path)) {
+        told.add(path)
+        $.ui.log(`hitodama: ${path} did not read; went on from ${spareOf(path)}, written just before it`)
+      }
+      return spare
+    }
+    const historyPath = `${dir}/history.json`
+    // A history that does not read, nor its spare copy, is not written over with less: the one in memory stands.
+    const readHistory = async () => (await readSafe(historyPath, isHistory)) ?? history
+    // A pet file that is gone means a new egg. One that is there but does not read, nor its spare copy, is left alone:
+    // the tick is skipped, never replaced by an egg.
     const petPath = `${dir}/pet.json`
-    const sparePath = `${dir}/pet.prev.json`
     const readPet = async (): Promise<Pet | null> => {
       if (!(await $.fs.exists(petPath))) return null
-      const p = await readJson<unknown>(petPath)
-      if (isPet(p)) return p
-      const spare = await readJson<unknown>(sparePath)
-      if (isPet(spare)) return spare
-      throw new Error(`${petPath} does not read as a pet, nor does ${sparePath}; they are kept as they are until one reads again, is fixed or ${petPath} is removed`)
-    }
-    const writePet = async (p: Pet) => {
-      const text = JSON.stringify(p)
-      await $.fs.write(sparePath, text)
-      await $.fs.write(petPath, text)
+      const p = await readSafe(petPath, isPet)
+      if (!p) throw new Error(`${petPath} does not read as a pet, nor does ${spareOf(petPath)}; they are kept as they are until one reads again, is fixed or ${petPath} is removed`)
+      return p
     }
     // date from /bin, then /usr/bin, then PATH (NixOS), each only when the one before gave no offset; else the
     // runtime's offset.
@@ -226,16 +241,16 @@ export const register: Register = (on, options) => {
         if (!resting && p.tantrum && p.tantrum.since !== was.tantrum) notify(tr().notifyTantrum(nameOf(p.ch)))
         if (p.dead && !was.dead) {
           history = bury(p, await readHistory())
-          await $.fs.write(`${dir}/history.json`, JSON.stringify(history))
+          await writeSafe(historyPath, history)
           notify(tr().notifyDeath(nameOf(p.ch), causeText(p.dead.cause)))
         }
         if (p.ch !== was.ch) {
           history = remember(await readHistory(), p.ch)
-          await $.fs.write(`${dir}/history.json`, JSON.stringify(history))
+          await writeSafe(historyPath, history)
         }
         const kept = p.dead && now - p.dead.at > T.death.newEggSeconds * 1000 ? { ...newEgg(now, p.life + 1), applied: p.applied } : p
         // Known limit: the previous owner may write one more tick after ownership moves; fine while a tick is 3 seconds.
-        await writePet(kept)
+        await writeSafe(petPath, kept)
         pet = kept
       } else pet = p
 
@@ -258,6 +273,9 @@ export const register: Register = (on, options) => {
     const known = saved === undefined || saved?.applied[sid] !== undefined
     // A resumed session's turn and helpers died with its old process, and their ends never come.
     win = { ...win, ...kept, sid, turn: false, agents: 0, ...(known ? {} : { events: [] }) }
+    // A window file cut short reads as none and would number events from 0, below what the pet has already applied,
+    // so they would be dropped: numbering goes on from there.
+    win.seq = Math.max(win.seq, saved?.applied[sid] ?? 0)
     unchecked = saved === undefined ? win.seq : 0
     history = await readHistory()
     io = {
@@ -336,8 +354,9 @@ export const register: Register = (on, options) => {
     const tokens = e.usage?.output_tokens ?? 0
     const cut = e.isAborted || !e.usage // interrupted, or ended on an API error: what it streamed is not counted
     const cost = turnCost(win.model, tokens, win.load, !!pet?.asleep, paceOf(followed, now), cut)
-    // Night is when the turn was made, not when an owner applies it, which can be hours later.
-    push({ k: 'turn', cost, model: win.model, effort: win.effort, tokens, load: win.load, night: !!pet?.asleep })
+    // Night is when the turn was made, not when an owner applies it, which can be hours later. A window that has not
+    // read the pet leaves it unmarked, for the owner to decide.
+    push({ k: 'turn', cost, model: win.model, effort: win.effort, tokens, load: win.load, night: pet?.asleep })
     return res
   })
 

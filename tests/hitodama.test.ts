@@ -3,7 +3,7 @@ import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code
 
 import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
-import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type Pet } from '../hooks/sim'
+import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
 import { cells, scene } from '../hooks/sprites'
 import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Win } from '../hooks/view'
 
@@ -367,7 +367,41 @@ test('a pet file cut off mid-write gives way to the spare copy, and the pet goes
   const saved = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
   expect(saved.ch).toBe(p.ch)
   expect(saved.at).toBeGreaterThan(p.at)
-  expect(s.logs).toEqual([])
+  expect(s.logs.filter(l => l.includes('pet.prev.json')).length).toBe(1) // said once, at session start and the tick
+})
+
+test('a history file cut off mid-write gives way to its spare copy, and a death writes both, the spare first', async ($, on) => {
+  const h = { lives: [{ n: 1, ch: 'kappa', path: [], from: 0, to: 0, days: 14, cause: 'old' }], seen: ['kappa'] }
+  const dying = { ...child(), hp: 0.001, sick: true, poops: 4 }
+  const s = await session($, on, { 'pet.json': JSON.stringify(dying), 'history.json': '{"lives":[', 'history.prev.json': JSON.stringify(h) })
+  await s.hd()
+  const written = JSON.parse(s.writes['history.json'] ?? '{}') as History
+  expect(written.lives.map(l => l.n)).toEqual([1, 1]) // this death, then the life the spare copy kept
+  expect(s.writes['history.prev.json']).toBe(s.writes['history.json'])
+  const histories = s.order.filter(f => f.startsWith('history'))
+  expect(histories.slice(-2)).toEqual(['history.prev.json', 'history.json'])
+})
+
+test('a window that has not read the pet leaves its turns unmarked, for the owner to decide', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  const s = await session($, on, { 'pet.json': '{"v":1,"life":' })
+  await $.turn.start({ text: '', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', usage: usage(1000) })
+  await s.hd()
+  const events = (JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events
+  expect(events.map(e => e.k)).toEqual(['turn'])
+  expect('night' in events[0]!).toBe(false)
+})
+
+test('a window file cut off mid-write still has its turns applied, numbered after what the pet has', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  const s = await session($, on, { 'pet.json': JSON.stringify({ ...child(), applied: { s1: 400 } }), 'seen/s1.json': '{"sid":"s1","seq":' })
+  await s.timerTick()
+  await $.turn.start({ text: '', turnId: 't1' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', usage: usage(1000) })
+  await s.hd()
+  const p = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
+  expect([p.stats.turns, p.applied.s1]).toEqual([1, 401])
 })
 
 test('every pet the owner writes goes to the spare copy first, the same', async ($, on) => {
