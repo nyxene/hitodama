@@ -6,7 +6,7 @@ import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, scene } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, decide, limitOf, statsText, title, type Ctx, type LimitKind, type Win } from './view'
+import { bar, decide, lastActive, limitOf, paceOf, statsText, title, type Ctx, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -131,7 +131,7 @@ export const register: Register = (on, options) => {
       const limit = limitOf(fresh, now)
       const ctx: Ctx = {
         ...limit, now, isOwner, ownerRoom, anim,
-        idleMin: (now - Math.max(...fresh.map(w => Math.max(w.lastActivity, w.lastInput)))) / 60_000,
+        idleMin: (now - lastActive(fresh, now)) / 60_000,
       }
       const d = game && isOwner ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
       const night = p.asleep && isOwner
@@ -192,7 +192,10 @@ export const register: Register = (on, options) => {
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
         const resting = limitOf(fresh, now).limit >= T.limits.hit
-        advance(p, now, hourAt, resting)
+        // Rest starts 15 minutes after the last activity. Activity since the last tick (typing, a press, a running
+        // turn) counts as at that tick, so the first thing done after a long gap does not undo the rest within it.
+        // ponytail: windows keep only their latest activity, so activity inside a gap counts from its start.
+        advance(p, now, hourAt, resting, Math.min(lastActive(fresh, now), p.at) + T.rest.afterMinutes * 60_000)
         for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
         }
@@ -242,7 +245,8 @@ export const register: Register = (on, options) => {
     // reads it, which drops them if the pet has no record of the session. Events of this run are never held back.
     const saved = await readPet().catch(() => undefined)
     const known = saved === undefined || saved?.applied[sid] !== undefined
-    win = { ...win, ...kept, sid, turn: false, ...(known ? {} : { events: [] }) }
+    // A resumed session's turn and helpers died with its old process, and their ends never come.
+    win = { ...win, ...kept, sid, turn: false, agents: 0, ...(known ? {} : { events: [] }) }
     unchecked = saved === undefined ? win.seq : 0
     history = await readHistory()
     io = {
@@ -311,9 +315,12 @@ export const register: Register = (on, options) => {
       return res
     }
     win.turn = false
-    win.lastActivity = await $.clock.now()
+    const now = await $.clock.now()
+    win.lastActivity = now
     if (e.isAborted) push({ k: 'abort' })
-    push({ k: 'turn', cost: turnCost(win.model, win.effort, win.load, !!pet?.asleep), model: win.model, effort: win.effort, tokens: e.usage?.output_tokens ?? 0, load: win.load })
+    const tokens = e.usage?.output_tokens ?? 0
+    const pace = paceOf(limitOf([win], now), now)
+    push({ k: 'turn', cost: turnCost(win.model, tokens, win.load, !!pet?.asleep, pace), model: win.model, effort: win.effort, tokens, load: win.load })
     return res
   })
 

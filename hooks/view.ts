@@ -40,6 +40,19 @@ export function limitOf(wins: Win[], now: number): Limit {
   return top ? { limit: top.limit, limitKind: top.limitKind, limitResetsAt: top.limitResetsAt } : { limit: 0 }
 }
 
+// How far ahead of the limit's pace the session runs, as a factor on turn cost: 1 + (percent used − percent of its
+// window passed) / perPoint, within min..max. 1 with no limit or no reset time, as then the window's start is unknown.
+export function paceOf(l: Limit, now: number): number {
+  const reset = l.limitResetsAt ? Date.parse(l.limitResetsAt) : NaN
+  if (!l.limitKind || !Number.isFinite(reset)) return 1
+  const passed = Math.max(0, Math.min(100, 100 * (1 - (reset - now) / SPAN[l.limitKind])))
+  return Math.max(T.pace.min, Math.min(T.pace.max, 1 + (l.limit - passed) / T.pace.perPoint))
+}
+
+// When any window was last active: now while one runs a turn or helpers, else its last input or finished turn.
+export const lastActive = (wins: Win[], now: number) =>
+  Math.max(...wins.map(w => (w.turn || w.agents > 0 ? now : Math.max(w.lastActivity, w.lastInput))))
+
 function left(ms: number) {
   const m = Math.max(0, Math.round(ms / 60_000))
   return m >= 60 ? tr().hm(Math.floor(m / 60), m % 60) : tr().min(m)
