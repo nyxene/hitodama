@@ -68,7 +68,7 @@ Run `/config` and find Hitodama.
 
 Hitodama makes no network requests and sends nothing anywhere. What it touches:
 
-- **Files:** reads and writes only `~/.claude/hitodama/`: `pet.json` (the pet, its journal, its statistics with the models, effort levels and token counts, and the session ids whose events it has applied), `history.json` (past lives and seen characters) and `seen/<session>.json` (one small file per session, so sessions can tell who has the pet; mods cannot delete files, so old ones stay until you remove them).
+- **Files:** reads and writes only `~/.claude/hitodama/`: `pet.json` (the pet, its journal, its statistics with the models, effort levels and token counts, and the session ids whose events it has applied), `history.json` (past lives and seen characters), `pet.prev.json` and `history.prev.json` (spare copies of the two, each written just before it) and `seen/<session>.json` (one small file per session, so sessions can tell who has the pet; mods cannot delete files, so old ones stay until you remove them).
 - **Session data:** the session id (to name its file), the name of the repository or working folder (shown in the pane and in your other sessions), the model name, effort level, context fill percentage, the five-hour usage percentage (or the weekly one when there is no five-hour limit) with its reset time and when it was read, the number of reply tokens, helper and failed tool counts, aborted turns, compactions, and when you last typed. It never reads your prompts, replies, files or transcript.
 - **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either, or when it is not an absolute path, it writes one line saying so to the transcript and does nothing else.
 - **Processes:** runs `date +%z` once per session (`/bin/date`, then `/usr/bin/date`, then the one on `PATH`, each tried only when the one before gave no offset) to learn your local UTC offset for bedtimes; without it, it takes the offset the runtime reports.
@@ -80,7 +80,7 @@ Hitodama makes no network requests and sends nothing anywhere. What it touches:
 ## Limitations
 
 - Mods run with your permissions. Organizations that allow only managed mods will refuse Hitodama.
-- A damaged `pet.json` stops the pet, with one line in the transcript after three skipped ticks, instead of replacing it with an egg; fix the file or delete it to start over.
+- A damaged `pet.json` or `history.json`, such as a write cut short when a window closes, gives way to its spare copy (`pet.prev.json`, `history.prev.json`), written just before it, with one line in the transcript; the next write puts the file right. Only when both copies of the pet are damaged does it stop, with one line after three skipped ticks, instead of replacing it with an egg; fix a file, or delete `pet.json` to start over.
 - Switching the active session hands the pet over within one three-second tick; in rare cases the old session writes one more tick.
 - The interface translations other than English and Russian were written without a native speaker's review. Corrections are welcome as issues.
 

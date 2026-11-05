@@ -38,7 +38,7 @@ export type Pet = {
 export type History = { lives: Life[]; seen: string[] }
 
 export type Ev =
-  | { seq: number; k: 'turn'; cost: number; model: string; effort: string; tokens: number; load: number }
+  | { seq: number; k: 'turn'; cost: number; model: string; effort: string; tokens: number; load: number; night?: boolean }
   | { seq: number; k: 'abort' }
   | { seq: number; k: 'compact' }
   | { seq: number; k: 'errors' }
@@ -254,7 +254,7 @@ export function applyEvent(p: Pet, e: Ev, t = p.at): void {
       p.stats.maxLoad = Math.max(p.stats.maxLoad, e.load)
       p.stats.models[e.model] = (p.stats.models[e.model] ?? 0) + 1
       p.stats.efforts[e.effort] = (p.stats.efforts[e.effort] ?? 0) + 1
-      if (p.asleep) {
+      if (e.night ?? p.asleep) { // turns from a window that has not read the pet, or saved by an older version, carry no mark
         p.stats.nightTurns += 1
         p.joy = clamp(p.joy + T.night.joyPerTurn)
       }
