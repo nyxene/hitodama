@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/nyxene/hitodama/compare/v0.3.0...v0.3.1) (2026-11-05)
+
+
+### Fixed
+
+* a pet.json write cut short falls back to a spare copy, and saved day turns no longer count as night turns ([#32](https://github.com/nyxene/hitodama/issues/32)) ([5fe3978](https://github.com/nyxene/hitodama/commit/5fe3978d2162e85c1f920c3c629fbbc9e2d67622))
+
 ## [0.3.0](https://github.com/nyxene/hitodama/compare/v0.2.0...v0.3.0) (2026-11-04)
 
 
