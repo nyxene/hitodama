@@ -36,8 +36,8 @@ export const register: Register = (on, options) => {
   let io: { tick: (action?: (p: Pet, now: number) => void) => Promise<void>; flush: () => Promise<void> } | null = null
   // Saved events up to this seq wait for a pet that reads: the pet file did not read at session start (see there).
   // A window that closes before then writes only the events of this run.
-  let unchecked = 0
-  const onDisk = () => JSON.stringify(unchecked ? { ...win, events: win.events.filter(ev => ev.seq > unchecked) } : win)
+  let unchecked: number | null = null
+  const onDisk = () => JSON.stringify(unchecked !== null ? { ...win, events: win.events.filter(ev => ev.seq > unchecked!) } : win)
 
   const push = (e: Ev extends infer E ? (E extends Ev ? Omit<E, 'seq'> : never) : never) => {
     win.seq += 1
@@ -123,8 +123,9 @@ export const register: Register = (on, options) => {
       return spare
     }
     const historyPath = `${dir}/history.json`
-    // A history that does not read, nor its spare copy, is not written over with less: the one in memory stands.
-    const readHistory = async () => (await readSafe(historyPath, isHistory)) ?? history
+    // A history that is there but does not read, nor its spare copy, is null and not written over: a death or a new
+    // character goes unrecorded there until one reads again. One that is gone starts from the one in memory.
+    const readHistory = async () => ((await $.fs.exists(historyPath)) ? readSafe(historyPath, isHistory) : history)
     // A pet file that is gone means a new egg. One that is there but does not read, nor its spare copy, is left alone:
     // the tick is skipped, never replaced by an egg.
     const petPath = `${dir}/pet.json`
@@ -194,7 +195,7 @@ export const register: Register = (on, options) => {
       }
       // While saved events wait to be checked, no events go to disk: no owner applies them unchecked, and the ones of
       // this run, a tick later, still reach it in order.
-      await $.fs.write(seenPath(sid), JSON.stringify(unchecked ? { ...win, events: [] } : win))
+      await $.fs.write(seenPath(sid), JSON.stringify(unchecked !== null ? { ...win, events: [] } : win))
 
       // Mods cannot delete files, so old session files stay; only recently written ones are read.
       // A listing that fails says nothing about who is gone: nothing is forgotten on that tick.
@@ -214,9 +215,16 @@ export const register: Register = (on, options) => {
       const isOwner = owner.sid === sid
 
       const p = (await readPet()) ?? newEgg(now)
-      if (unchecked) {
-        if (p.applied[sid] === undefined) win.events = win.events.filter(ev => ev.seq > unchecked)
-        unchecked = 0
+      if (unchecked !== null) {
+        const base = unchecked
+        const applied = p.applied[sid]
+        if (applied === undefined) win.events = win.events.filter(ev => ev.seq > base)
+        // A window file cut short as well numbered this run from below what the pet has applied: it moves up past it.
+        else if (applied > base) {
+          win.events = win.events.map(ev => (ev.seq > base ? { ...ev, seq: ev.seq + applied - base } : ev))
+          win.seq += applied - base
+        }
+        unchecked = null
       }
       if (isOwner) {
         const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
@@ -240,13 +248,13 @@ export const register: Register = (on, options) => {
         if (!resting && p.call && p.call.since !== was.call) notify(tr().notifyCall(nameOf(p.ch), tr().callWord[p.call.reason]))
         if (!resting && p.tantrum && p.tantrum.since !== was.tantrum) notify(tr().notifyTantrum(nameOf(p.ch)))
         if (p.dead && !was.dead) {
-          history = bury(p, await readHistory())
-          await writeSafe(historyPath, history)
+          const h = await readHistory()
+          if (h) await writeSafe(historyPath, (history = bury(p, h)))
           notify(tr().notifyDeath(nameOf(p.ch), causeText(p.dead.cause)))
         }
         if (p.ch !== was.ch) {
-          history = remember(await readHistory(), p.ch)
-          await writeSafe(historyPath, history)
+          const h = await readHistory()
+          if (h) await writeSafe(historyPath, (history = remember(h, p.ch)))
         }
         const kept = p.dead && now - p.dead.at > T.death.newEggSeconds * 1000 ? { ...newEgg(now, p.life + 1), applied: p.applied } : p
         // Known limit: the previous owner may write one more tick after ownership moves; fine while a tick is 3 seconds.
@@ -276,8 +284,8 @@ export const register: Register = (on, options) => {
     // A window file cut short reads as none and would number events from 0, below what the pet has already applied,
     // so they would be dropped: numbering goes on from there.
     win.seq = Math.max(win.seq, saved?.applied[sid] ?? 0)
-    unchecked = saved === undefined ? win.seq : 0
-    history = await readHistory()
+    unchecked = saved === undefined ? win.seq : null
+    history = (await readHistory()) ?? history
     io = {
       tick: async action => {
         touch(await $.clock.now())

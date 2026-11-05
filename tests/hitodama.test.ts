@@ -387,7 +387,7 @@ test('a window that has not read the pet leaves its turns unmarked, for the owne
   const s = await session($, on, { 'pet.json': '{"v":1,"life":' })
   await $.turn.start({ text: '', turnId: 't1' })
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', usage: usage(1000) })
-  await s.hd()
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } }) // writes the events of this run
   const events = (JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).events
   expect(events.map(e => e.k)).toEqual(['turn'])
   expect('night' in events[0]!).toBe(false)
@@ -402,6 +402,43 @@ test('a window file cut off mid-write still has its turns applied, numbered afte
   await s.hd()
   const p = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
   expect([p.stats.turns, p.applied.s1]).toEqual([1, 401])
+})
+
+test('a window file cut off while the pet file does not read either still has its events applied once the pet reads', async ($, on) => {
+  const s = await session($, on, { 'pet.json': '{"v":1,"life":', 'seen/s1.json': '{"sid":"s1","seq":' })
+  await $.turn.start({ text: '', turnId: 't1', agentId: 'a1' })
+  await s.hd()
+  s.files['pet.json'] = JSON.stringify({ ...child(), applied: { s1: 400 } })
+  await s.hd()
+  const p = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
+  expect([p.stats.agents, p.applied.s1]).toEqual([1, 401])
+})
+
+test('a pet file that is gone means a new egg, even with a spare copy there', async ($, on) => {
+  const p = child()
+  const s = await session($, on, { 'pet.prev.json': JSON.stringify(p) })
+  await s.hd()
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).ch).not.toBe(p.ch)
+})
+
+test('going on from the spare copy is said again once the file has read in between', async ($, on) => {
+  const p = child()
+  const torn = JSON.stringify(p).slice(0, -1)
+  const s = await session($, on, { 'pet.json': torn, 'pet.prev.json': JSON.stringify(p) })
+  await s.hd()
+  s.files['pet.json'] = JSON.stringify(p)
+  await s.hd() // the file reads again
+  s.files['pet.json'] = torn
+  await s.hd()
+  expect(s.logs.filter(l => l.includes('pet.prev.json')).length).toBe(2)
+})
+
+test('a history file that does not read, nor its spare copy, is not written over by a death', async ($, on) => {
+  const dying = { ...child(), hp: 0.001, sick: true, poops: 4 }
+  const s = await session($, on, { 'pet.json': JSON.stringify(dying), 'history.json': '{"lives":[' })
+  await s.hd()
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).dead).toBeTruthy()
+  expect(s.writes['history.json']).toBeUndefined()
 })
 
 test('every pet the owner writes goes to the spare copy first, the same', async ($, on) => {
