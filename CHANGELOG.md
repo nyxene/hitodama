@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/nyxene/hitodama/compare/v0.3.1...v0.3.2) (2026-11-06)
+
+
+### Fixed
+
+* going on from a spare copy is said only when the file is not the start of it ([#35](https://github.com/nyxene/hitodama/issues/35)) ([38b745c](https://github.com/nyxene/hitodama/commit/38b745c74b1a9555bcc18d9e4a44b72e268b4961))
+
 ## [0.3.1](https://github.com/nyxene/hitodama/compare/v0.3.0...v0.3.1) (2026-11-05)
 
 
