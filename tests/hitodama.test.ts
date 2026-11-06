@@ -360,14 +360,23 @@ test('a pet file cut off mid-write with no spare copy is left as it is, said onc
   expect(s.logs.filter(l => l.includes('pet.json')).length).toBe(1)
 })
 
-test('a pet file cut off mid-write gives way to the spare copy, and the pet goes on', async ($, on) => {
+test('a pet file cut off mid-write gives way to the spare copy, and the pet goes on without a word', async ($, on) => {
   const p = child()
   const s = await session($, on, { 'pet.json': JSON.stringify(p).slice(0, -1), 'pet.prev.json': JSON.stringify(p) })
   await s.hd()
   const saved = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
   expect(saved.ch).toBe(p.ch)
   expect(saved.at).toBeGreaterThan(p.at)
-  expect(s.logs.filter(l => l.includes('pet.prev.json')).length).toBe(1) // said once, at session start and the tick
+  expect(s.logs.filter(l => l.includes('pet.prev.json'))).toEqual([]) // the spare copy holds that text whole
+})
+
+test('a pet file damaged other than cut short gives way to the spare copy, said once', async ($, on) => {
+  const p = child()
+  const s = await session($, on, { 'pet.json': JSON.stringify(p).replace('{', '{,'), 'pet.prev.json': JSON.stringify(p) })
+  await s.hd()
+  await s.hd()
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).ch).toBe(p.ch)
+  expect(s.logs.filter(l => l.includes('pet.prev.json')).length).toBe(1) // at session start and on the ticks
 })
 
 test('a history file cut off mid-write gives way to its spare copy, and a death writes both, the spare first', async ($, on) => {
@@ -423,12 +432,12 @@ test('a pet file that is gone means a new egg, even with a spare copy there', as
 
 test('going on from the spare copy is said again once the file has read in between', async ($, on) => {
   const p = child()
-  const torn = JSON.stringify(p).slice(0, -1)
-  const s = await session($, on, { 'pet.json': torn, 'pet.prev.json': JSON.stringify(p) })
+  const damaged = JSON.stringify(p).replace('{', '{,')
+  const s = await session($, on, { 'pet.json': damaged, 'pet.prev.json': JSON.stringify(p) })
   await s.hd()
   s.files['pet.json'] = JSON.stringify(p)
   await s.hd() // the file reads again
-  s.files['pet.json'] = torn
+  s.files['pet.json'] = damaged
   await s.hd()
   expect(s.logs.filter(l => l.includes('pet.prev.json')).length).toBe(2)
 })

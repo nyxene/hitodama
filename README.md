@@ -80,7 +80,7 @@ Hitodama makes no network requests and sends nothing anywhere. What it touches:
 ## Limitations
 
 - Mods run with your permissions. Organizations that allow only managed mods will refuse Hitodama.
-- A damaged `pet.json` or `history.json`, such as a write cut short when a window closes, gives way to its spare copy (`pet.prev.json`, `history.prev.json`), written just before it, with one line in the transcript; the next write puts the file right. Only when both copies of the pet are damaged does it stop, with one line after three skipped ticks, instead of replacing it with an egg; fix a file, or delete `pet.json` to start over.
+- A damaged `pet.json` or `history.json`, such as a write cut short when a window closes, gives way to its spare copy (`pet.prev.json`, `history.prev.json`), written just before it; the next write puts the file right. A file that is only the start of its spare copy, as a write cut short or a read while another window writes leaves it, gives way without a word; any other damage, such as a broken hand edit, writes one line to the transcript. Only when both copies of the pet are damaged does it stop, with one line after three skipped ticks, instead of replacing it with an egg; fix a file, or delete `pet.json` to start over.
 - Switching the active session hands the pet over within one three-second tick; in rare cases the old session writes one more tick.
 - The interface translations other than English and Russian were written without a native speaker's review. Corrections are welcome as issues.
 
