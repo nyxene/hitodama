@@ -101,8 +101,11 @@ export const register: Register = (on, options) => {
     }
     // Mods cannot rename files, so a write can be cut short (a window closing, a second writer). The pet and the
     // history are written to a spare copy first, then to their own file. One that is there but does not read gives
-    // way to its spare copy, written just before it, and the line says so once.
+    // way to its spare copy, written just before it, and the line says so once, unless it was only the start of the
+    // spare copy: a read while another window writes, a write cut short or a failed read, with nothing lost.
     const spareOf = (path: string) => path.replace(/\.json$/, '.prev.json')
+    const readText = (path: string) => $.fs.read(path).catch(() => '')
+    const parse = (text: string): unknown => { try { return JSON.parse(text) } catch { return null } }
     const writeSafe = async (path: string, value: unknown) => {
       const text = JSON.stringify(value)
       await $.fs.write(spareOf(path), text)
@@ -112,11 +115,13 @@ export const register: Register = (on, options) => {
     // The file when it reads, else its spare copy when that reads; null when the file is gone or neither reads.
     const readSafe = async <V,>(path: string, ok: (v: unknown) => v is V): Promise<V | null> => {
       if (!(await $.fs.exists(path))) return null
-      const v = await readJson<unknown>(path)
+      const text = await readText(path)
+      const v = parse(text)
       if (ok(v)) { told.delete(path); return v }
-      const spare = await readJson<unknown>(spareOf(path))
+      const spareText = await readText(spareOf(path))
+      const spare = parse(spareText)
       if (!ok(spare)) return null
-      if (!told.has(path)) {
+      if (!spareText.startsWith(text) && !told.has(path)) {
         told.add(path)
         $.ui.log(`hitodama: ${path} did not read; went on from ${spareOf(path)}, written just before it`)
       }
