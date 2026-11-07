@@ -97,7 +97,7 @@ export const register: Register = (on, options) => {
     return io.tick((p, now) => {
       const r = act(p, a, now)
       if (r.anim === 'game') { game = { wins: [], dir: 0 }; anim = null; return }
-      note(p, now, r.msg)
+      if (!r.noop) note(p, now, r.msg)
       anim = { id: r.anim, until: now + 3000, msg: r.msg }
     })
   }

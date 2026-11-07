@@ -1080,6 +1080,27 @@ test('a pet asleep on an empty stomach wakes hungry, not dead', () => {
   expect(p.call?.reason).toBe('hungry')
 })
 
+test('a care key that changes nothing answers on the screen but stays out of the journal', async ($, on) => {
+  const p = { ...child(), tantrum: { since: T0 }, poops: 0, log: [] } // refuses food in a tantrum
+  // The timer ticks only when told to, so no tick of its own writes over a press's.
+  const s = await session($, on, { 'pet.json': JSON.stringify(p) }, { timer: true })
+  await s.timerTick()
+  const ui = await $.ui.mount({
+    plugin: 'hitodama', surface: 'terminal', component: 'Pane', requestId: 'hitodama',
+    props: { title: 'Hitodama', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+  })
+  const journal = () => (JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).log.map(l => l.text)
+  for (const key of ['b-eat', 'b-eat', 'b-clean', 'b-heal']) {
+    s.files['pet.json'] = s.writes['pet.json'] ?? s.files['pet.json']! // the press reads what the last tick wrote
+    await ui.press({ key })
+  }
+  expect(journal()).toEqual([])
+  s.files['pet.json'] = s.writes['pet.json']!
+  await ui.press({ key: 'b-snack' })
+  expect(journal()).toEqual([tr().candy(10, 2)])
+  await ui.unmount()
+})
+
 test('a game left open ends once the pet falls ill, and the care buttons come back', async ($, on) => {
   const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
   await s.hd()

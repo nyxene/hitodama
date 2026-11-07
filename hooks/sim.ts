@@ -285,22 +285,23 @@ export function turnCost(model: string, tokens: number, load: number, asleep: bo
 }
 
 export type Act = 'eat' | 'snack' | 'game' | 'clean' | 'heal' | 'light' | 'scold'
-// Returns which animation to show and what to say. refuse means it said no.
-export function act(p: Pet, a: Act, t: number): { anim: string; msg: string } {
+// Returns which animation to show and what to say. refuse means it said no; noop, that nothing changed, so the answer
+// shows on the screen and stays out of the journal.
+export function act(p: Pet, a: Act, t: number): { anim: string; msg: string; noop?: true } {
   const name = nameOf(p.ch)
-  if (p.dead || p.ch === 'egg') return { anim: '', msg: p.dead ? tr().gone : tr().eggNoTouch }
-  if (p.asleep && a !== 'light' && a !== 'heal') return { anim: '', msg: tr().asleep(name) }
+  if (p.dead || p.ch === 'egg') return { anim: '', msg: p.dead ? tr().gone : tr().eggNoTouch, noop: true }
+  if (p.asleep && a !== 'light' && a !== 'heal') return { anim: '', msg: tr().asleep(name), noop: true }
   switch (a) {
     case 'eat':
-      if (p.tantrum) return { anim: 'refuse', msg: tr().tantrumNoEat }
-      if (p.sick) return { anim: 'refuse', msg: tr().sickNoEat }
-      if (p.sat >= 100) return { anim: 'refuse', msg: tr().notHungry }
+      if (p.tantrum) return { anim: 'refuse', msg: tr().tantrumNoEat, noop: true }
+      if (p.sick) return { anim: 'refuse', msg: tr().sickNoEat, noop: true }
+      if (p.sat >= 100) return { anim: 'refuse', msg: tr().notHungry, noop: true }
       p.sat = clamp(p.sat + T.care.meal)
       p.weight += T.weight.meal
       p.stats.meals += 1
       return { anim: 'eat', msg: tr().ate(T.care.meal, T.weight.meal) }
     case 'snack': {
-      if (p.sick) return { anim: 'refuse', msg: tr().sickNoSnack }
+      if (p.sick) return { anim: 'refuse', msg: tr().sickNoSnack, noop: true }
       p.joy = clamp(p.joy + T.care.snackJoy)
       p.weight += T.weight.snack
       p.stats.snacks += 1
@@ -314,14 +315,14 @@ export function act(p: Pet, a: Act, t: number): { anim: string; msg: string } {
       return { anim: 'snack', msg: tr().candy(T.care.snackJoy, T.weight.snack) }
     }
     case 'game':
-      if (p.sick) return { anim: 'refuse', msg: tr().sickNoGame }
+      if (p.sick) return { anim: 'refuse', msg: tr().sickNoGame, noop: true }
       return { anim: 'game', msg: tr().gameStart }
     case 'clean':
-      if (!p.poops) return { anim: '', msg: tr().alreadyClean }
+      if (!p.poops) return { anim: '', msg: tr().alreadyClean, noop: true }
       p.poops = 0
       return { anim: 'clean', msg: tr().cleaned }
     case 'heal':
-      if (!p.sick) return { anim: 'refuse', msg: tr().healthy }
+      if (!p.sick) return { anim: 'refuse', msg: tr().healthy, noop: true }
       p.hp = clamp(p.hp + T.care.heal)
       if (p.hp >= T.care.cure) p.sick = false
       return { anim: 'heal', msg: p.sick ? tr().healAgain : tr().healed }
