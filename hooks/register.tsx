@@ -158,7 +158,7 @@ export const register: Register = (on, options) => {
     let busy = Promise.resolve()
 
     // active: when any window was last active, as the tick found it. asking: the rooms of other windows where Claude
-    // waits for permission.
+    // asked for permission.
     const refresh = async (now: number, isOwner: boolean, ownerRoom: string, active: number, asking: string[] = []) => {
       const p = pet
       if (!p) return

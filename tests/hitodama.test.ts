@@ -604,15 +604,16 @@ test('a turn counts as made at night by when it was made, not when it is applied
   expect([older.joy, older.stats.nightTurns]).toEqual([49, 1]) // an older event with no mark: as before
 })
 
-test('another window asking for permission comes before everything but death, in every pane', () => {
-  const p = child()
-  p.sick = true
-  for (const over of [{}, { isOwner: false }]) {
+test('another window asking for permission takes the line in every pane but a dead pet\'s; the screen stays as it was', () => {
+  const sick = child()
+  sick.sick = true
+  const asleep = { ...child(), asleep: true, lightsOff: true }
+  for (const [p, over] of [[sick, {}], [sick, { isOwner: false }], [egg(), {}], [asleep, {}]] as const) {
     const d = decide(p, { ...win, turn: true }, ctx(p.at, { ...over, asking: ['astro'] }))
-    expect([d.scene, d.msg]).toEqual(['call', tr().asking('astro')])
+    expect([d.scene, d.msg]).toEqual([decide(p, { ...win, turn: true }, ctx(p.at, over)).scene, tr().asking('astro')])
   }
-  p.dead = { at: p.at, cause: 'sick' }
-  expect(decide(p, win, ctx(p.at, { asking: ['astro'] })).scene).toBe('dead')
+  sick.dead = { at: sick.at, cause: 'sick' }
+  expect(decide(sick, win, ctx(sick.at, { asking: ['astro'] })).msg).not.toBe(tr().asking('astro'))
 })
 
 // The window file a session writes on its next tick.
@@ -623,7 +624,8 @@ const seen = async (s: { hd: () => Promise<unknown>; writes: Record<string, stri
 
 test('a permission prompt marks the window until the tool call ends; other notices do not', async ($, on) => {
   on('tool.call', () => ({ result: 'ok' }) as never)
-  on('classic.Notification', () => ({}))
+  let reached = 0
+  on('classic.Notification', () => { reached += 1; return {} }) // the user's own Notification hooks, beneath
   const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
   await $.classic.Notification({ notification_type: 'idle_prompt', message: 'waiting' })
   expect((await seen(s)).asking ?? 0).toBe(0)
@@ -631,8 +633,40 @@ test('a permission prompt marks the window until the tool call ends; other notic
   const marked = await seen(s)
   expect(marked.asking).toBeGreaterThan(0)
   expect(JSON.stringify(marked)).not.toContain('Bash') // only that a prompt showed is kept
+  expect(reached).toBe(2)
   await $.tool.call({ tool: 'Bash', tool_use_id: 'u1', command: 'true' } as never)
   expect((await seen(s)).asking).toBe(0)
+})
+
+test('a submitted prompt or a new turn takes the permission mark off', async ($, on) => {
+  on('classic.Notification', () => ({}))
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await $.classic.Notification({ notification_type: 'permission_prompt', message: '' })
+  expect((await seen(s)).asking).toBeGreaterThan(0)
+  await $.prompt.submit({ text: 'go on' } as never)
+  expect((await seen(s)).asking).toBe(0)
+  await $.classic.Notification({ notification_type: 'permission_prompt', message: '' })
+  expect((await seen(s)).asking).toBeGreaterThan(0)
+  await $.turn.start({ text: '', turnId: 't1' })
+  expect((await seen(s)).asking).toBe(0)
+})
+
+test('a game does not hide another window asking for permission', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.hd()
+  const mount = () => $.ui.mount({
+    plugin: 'hitodama', surface: 'terminal', component: 'Pane', requestId: 'hitodama',
+    props: { title: 'Hitodama', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+  })
+  let ui = await mount()
+  await ui.press({ key: 'b-game' })
+  await ui.unmount()
+  s.files['seen/s2.json'] = JSON.stringify({ ...win, sid: 's2', room: 'astro', alive: T0 + HOUR, asking: T0 })
+  await s.hd()
+  ui = await mount()
+  expect((await ui.find({ type: 'Text', text: /astro/ }))?.text).toContain(tr().asking('astro'))
+  await ui.unmount()
 })
 
 test('an interrupted turn leaves no permission mark', async ($, on) => {

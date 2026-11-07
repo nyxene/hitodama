@@ -17,7 +17,7 @@ export type Limit = { limit: number; limitKind?: LimitKind; limitResetsAt?: stri
 export type Ctx = Limit & {
   now: number; isOwner: boolean; ownerRoom: string
   idleMin: number; anim?: { id: string; until: number; msg: string } | null
-  asking?: string[] // the rooms of other live windows where Claude waits for permission
+  asking?: string[] // the rooms of other live windows where Claude asked for permission
 }
 
 const EFF: Record<string, string> = { low: 'think_low', medium: 'think_med', high: 'think_high', xhigh: 'think_high', max: 'think_max' }
@@ -70,10 +70,16 @@ function left(ms: number) {
 }
 
 // The first matching state wins.
+// Another window where Claude asked for permission takes the line under the screen over everything but death; the
+// screen shows what it would anyway.
 export function decide(p: Pet, w: Win, c: Ctx): { scene: string; msg: string } {
+  const d = pick(p, w, c)
+  return c.asking?.length && !p.dead ? { scene: d.scene, msg: tr().asking(c.asking.join(', ')) } : d
+}
+
+function pick(p: Pet, w: Win, c: Ctx): { scene: string; msg: string } {
   const n = nameOf(p.ch)
   if (p.dead) return { scene: 'dead', msg: tr().dead(n, causeText(p.dead.cause), p.ageDays) }
-  if (c.asking?.length) return { scene: 'call', msg: tr().asking(c.asking.join(', ')) }
   if (!c.isOwner) return { scene: 'away', msg: tr().away(n, c.ownerRoom) }
   if (p.ch === 'egg') return { scene: 'egg', msg: tr().eggWait(left(p.bornAt + lineOf(p.line).hatchMinutes * 60_000 - c.now)) }
   if (c.now - p.evolvedAt < 6000) {
