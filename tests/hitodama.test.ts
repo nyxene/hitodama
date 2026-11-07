@@ -1085,6 +1085,8 @@ test('asleep, only the light and medicine are taken; the light changes something
   const p = { ...child(), asleep: true, lightsOff: false }
   expect([act(p, 'eat', p.at).noop, act(p, 'snack', p.at).noop, act(p, 'light', p.at).noop]).toEqual([true, true, undefined])
   expect(p.lightsOff).toBe(true)
+  const q = { ...child(), asleep: true, sick: true }
+  expect([act(q, 'heal', q.at).noop, q.sick]).toEqual([undefined, false])
 })
 
 test('a care key that changes nothing stays out of the journal', async ($, on) => {

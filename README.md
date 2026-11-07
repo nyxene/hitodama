@@ -79,7 +79,7 @@ The pane lays itself out by its size:
 - **Wide and short:** the screen on the left, the text and the buttons beside it.
 - **Too small for the screen:** the text and the buttons alone; when even they do not fit, the needs go on one line.
 
-The journal under it keeps what happened, each entry wrapping under its own text.
+The journal under it keeps what happened, each entry wrapping under its own text; keys that change nothing (feeding a sleeping pet, say) answer on the screen and stay out of it.
 
 ## Settings
 
