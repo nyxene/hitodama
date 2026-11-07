@@ -457,13 +457,16 @@ export const register: Register = (on, options) => {
       return rowsUsed
     }
     const textRows = (w: number, meta = true) => lines(v.msg, w)
-      + (v.mode === 'stats' ? v.stats.length : barsAt(w).length + (meta ? lines(v.meta, w) : 0)) + buttonRows(w)
-    // The layout the pane's size allows: the screen above the text when both fit; beside it in a wide and short pane;
-    // the text alone when the screen fits neither way, without the model line if that is what keeps the buttons in.
+      + (v.mode === 'stats' ? v.stats.reduce((n, l) => n + lines(l, w), 0) : barsAt(w).length + (meta ? lines(v.meta, w) : 0))
+      + buttonRows(w)
+    // The layout the pane's size allows: the screen with everything under it as wide as the screen, like the body of
+    // a pocket device, when that fits; the text beside the screen in a wide and short pane; the text alone when the
+    // screen fits neither way, without the model line if that is what keeps the buttons in.
     const screenW = 32 * scale, screenH = isTerminal ? 12 * scale : 1, sideW = cols - screenW - 2
-    const layout = 1 + screenH + textRows(cols) <= rows ? 'stack'
+    const stackW = isTerminal ? Math.min(cols, screenW) : cols
+    const layout = 1 + screenH + textRows(stackW) <= rows ? 'stack'
       : isTerminal && sideW >= 28 && rows >= 1 + screenH ? 'side' : 'text'
-    const textW = layout === 'side' ? sideW : cols
+    const textW = layout === 'side' ? sideW : layout === 'stack' ? stackW : cols
     const meta = layout !== 'text' || 1 + textRows(cols) <= rows
     const text = (
       <Box flexDirection="column" width={layout === 'side' ? sideW : undefined}>
@@ -477,10 +480,10 @@ export const register: Register = (on, options) => {
         </Box>
       </Box>
     )
-    const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW)) : (layout === 'stack' ? screenH : 0) + textRows(cols, meta)) + 2
+    const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW)) : (layout === 'stack' ? screenH : 0) + textRows(textW, meta)) + 2
     const logRows = Math.max(0, rows - used)
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" width={layout === 'stack' ? stackW : undefined}>
         <Text wrap="truncate-end">
           <Text bold>{v.title}</Text>
           {v.call ? <Text color="yellow" bold> (!)</Text> : ''}
