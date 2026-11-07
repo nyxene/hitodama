@@ -509,6 +509,10 @@ for (const [colour, colored] of [['screen', false], ['all', true], ['text', true
     const tones = all(await ui.drawn()).flatMap(e => (e.type === 'Text' && typeof e.props?.color === 'string' && e.props.color !== 'yellow' ? [e.props.color] : []))
     expect(tones.includes('error')).toBe(colored) // mood 0
     expect(tones.includes('success')).toBe(colored) // fullness 90
+    // The screen is the LCD's two greys with text and none, coloured with screen and all.
+    const lcd = all(await ui.drawn()).find(e => e.type === 'Raster')!.props!.cells as string
+    const used = new Set([...words(lcd)].filter((_, i) => i % 3))
+    expect(used.has(0xc4ccb2)).toBe(colour === 'text' || colour === 'none')
     await ui.unmount()
   })
 }
