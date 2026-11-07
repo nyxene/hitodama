@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/nyxene/hitodama/compare/v0.3.2...v0.4.0) (2026-11-07)
+
+
+### Added
+
+* the pane names the other session where Claude asked for permission ([#43](https://github.com/nyxene/hitodama/issues/43)) ([92478cd](https://github.com/nyxene/hitodama/commit/92478cd889d757b0f92e3b881a64a0e048b578de))
+* while Claude works in the pet's session, calls and tantrums wait and its needs fall slower ([#42](https://github.com/nyxene/hitodama/issues/42)) ([29f03ec](https://github.com/nyxene/hitodama/commit/29f03ecfe08893130c1527aa7d47b30fa645e05e))
+
+
+### Fixed
+
+* a child's mood falls at an adult's rate, 3 points an hour awake ([#38](https://github.com/nyxene/hitodama/issues/38)) ([2248d87](https://github.com/nyxene/hitodama/commit/2248d871804f1422122a2f8d55a0d006494bb228))
+
 ## [0.3.2](https://github.com/nyxene/hitodama/compare/v0.3.1...v0.3.2) (2026-11-06)
 
 
