@@ -65,7 +65,8 @@ Run `/config` and find Hitodama.
 | Option | Values | Default |
 | --- | --- | --- |
 | `language` | `en` English, `ru` Русский, `zh` 中文, `ja` 日本語, `ko` 한국어, `es` Español, `pt` Português, `de` Deutsch, `fr` Français | `en` |
-| `colour` | `screen` the screen in colour: dark, each yokai in its own colour; `all` the bars too, coloured by level; `text` the bars only, the screen in two greys as on a pocket LCD; `none` the LCD and plain bars | `screen` |
+| `colourScreen` | on: a dark screen, each yokai in its own colour; off: two greys, as on a pocket LCD | on |
+| `colourBars` | on: the bars under the screen coloured by level, green, yellow, red | off |
 | `detail` | `pixel` 32 × 24 pixels; `braille` the picture smoothed and drawn in braille dots, four times as many in the same space (how they look depends on the terminal's font) | `pixel` |
 | `smallPixels` | on: on a screen wider than 32 columns, the picture smoothed to twice the pixels, each half as big | on |
 | `itemColours` | on: on the coloured screen, things around the pet by kind (food yellow, droppings brown, sleep white, hearts pink, medicine blue, alarms red); off: all yellow | on |

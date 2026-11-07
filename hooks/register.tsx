@@ -47,10 +47,9 @@ export const register: Register = (on, options) => {
     win.lastActivity = now
     if (typing) win.typingAt = now
   }
-  // The look the settings ask for; anything else falls back to the default. colour: screen, the screen in colour
-  // (default); all, the bars too; text, the bars only, the screen as an LCD; none, the LCD and plain bars.
-  const colour = (['screen', 'all', 'text', 'none'] as const).find(c => c === options.colour) ?? 'screen'
-  const lcd = colour === 'text' || colour === 'none', colourBars = colour === 'all' || colour === 'text'
+  // The look the settings ask for; anything else falls back to the default. The screen is in colour unless
+  // colourScreen is off (then an LCD); the bars only when colourBars is on.
+  const lcd = options.colourScreen === false, colourBars = options.colourBars === true
   const detail: Detail = options.detail === 'braille' ? 'braille' : 'pixel'
   const setting = (key: string) => options[key] !== false
   const frameCells = (sceneId: string, night: boolean) => {
@@ -448,7 +447,7 @@ export const register: Register = (on, options) => {
     // Bars in two columns where they fit side by side: fullness | health, energy | discipline, mood | load.
     const barsAt = (w: number) => w >= 2 * width(v.bars[0] ?? ''.padEnd(25)) + 3
       ? [[0, 3], [1, 4], [2, 5]] : v.bars.map((_, i) => [i])
-    // With colour all or text, the filled part of a bar takes the theme's colour for its level: low needs, or a heavy
+    // With colourBars on, the filled part of a bar takes the theme's colour for its level: low needs, or a heavy
     // load (the last bar), warn.
     const barEl = (i: number) => {
       const s = v.bars[i] ?? '', a = s.search(/[█░]/), b = s.lastIndexOf('░') + 1 || s.lastIndexOf('█') + 1

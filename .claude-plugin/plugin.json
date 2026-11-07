@@ -36,17 +36,17 @@
       ],
       "default": "en"
     },
-    "colour": {
-      "type": "string",
-      "title": "Colour",
-      "description": "What is in colour: screen, the screen (a dark screen, each yokai in its own colour); all, the screen and the bars; text, the bars only, the screen as a two-grey LCD; none, the LCD and plain bars.",
-      "options": [
-        "screen",
-        "all",
-        "text",
-        "none"
-      ],
-      "default": "screen"
+    "colourScreen": {
+      "type": "boolean",
+      "title": "Colour screen",
+      "description": "A dark screen with each yokai in its own colour. Off, the screen is two greys, as on a pocket LCD.",
+      "default": true
+    },
+    "colourBars": {
+      "type": "boolean",
+      "title": "Colour bars",
+      "description": "The bars under the screen coloured by level: green, yellow, red.",
+      "default": false
     },
     "smallPixels": {
       "type": "boolean",

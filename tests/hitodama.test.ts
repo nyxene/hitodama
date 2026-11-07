@@ -502,17 +502,17 @@ test('a long journal entry wraps under its text, with the time in a column of it
   await ui.unmount()
 })
 
-for (const [colour, colored] of [['screen', false], ['all', true], ['text', true], ['none', false]] as const) {
-  kitTest(`with colour ${colour} the bars are ${colored ? "coloured by level from the theme" : "plain"}`, { timeoutMs: 60_000, options: { colour } }, async ($, on) => {
+// Each setting on its own, and both at once; no options at all is the default (a coloured screen, plain bars).
+for (const options of [{}, { colourScreen: false }, { colourBars: true }, { colourScreen: false, colourBars: true }] as Record<string, boolean>[]) {
+  const lcd = options.colourScreen === false, colored = options.colourBars === true
+  kitTest(`the screen is ${lcd ? 'an LCD' : 'in colour'} and the bars ${colored ? 'coloured by level' : 'plain'} with ${JSON.stringify(options)}`, { timeoutMs: 60_000, options }, async ($, on) => {
     await session($, on, { 'pet.json': JSON.stringify({ ...child(), joy: 0, sat: 90 }) })
     const ui = await pane($, 'terminal', 70, 60)
     const tones = all(await ui.drawn()).flatMap(e => (e.type === 'Text' && typeof e.props?.color === 'string' && e.props.color !== 'yellow' ? [e.props.color] : []))
     expect(tones.includes('error')).toBe(colored) // mood 0
     expect(tones.includes('success')).toBe(colored) // fullness 90
-    // The screen is the LCD's two greys with text and none, coloured with screen and all.
-    const lcd = all(await ui.drawn()).find(e => e.type === 'Raster')!.props!.cells as string
-    const used = new Set([...words(lcd)].filter((_, i) => i % 3))
-    expect(used.has(0xc4ccb2)).toBe(colour === 'text' || colour === 'none')
+    const cells = all(await ui.drawn()).find(e => e.type === 'Raster')!.props!.cells as string
+    expect(new Set([...words(cells)].filter((_, i) => i % 3)).has(0xc4ccb2)).toBe(lcd)
     await ui.unmount()
   })
 }
