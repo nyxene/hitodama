@@ -6,7 +6,7 @@ import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, scene } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
+import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -232,9 +232,9 @@ export const register: Register = (on, options) => {
         unchecked = null
       }
       if (isOwner) {
-        const was = { call: p.call?.since, tantrum: p.tantrum?.since, dead: !!p.dead, ch: p.ch }
+        const was = { call: p.call?.reason, tantrum: !!p.tantrum, dead: !!p.dead, ch: p.ch }
         const resting = followed.limit >= T.limits.hit
-        advance(p, now, hourAt, resting, restFrom(active, p.at))
+        advance(p, now, hourAt, resting, restFrom(active, p.at), isBusy(owner, now))
         for (const w of [win, ...written]) for (const ev of w.events) {
           if (ev.seq > (p.applied[w.sid] ?? 0)) { applyEvent(p, ev, now); p.applied[w.sid] = ev.seq }
         }
@@ -246,12 +246,12 @@ export const register: Register = (on, options) => {
         action?.(p, now)
         // A game left open ends once the pet cannot play, so its state shows again.
         if (game && !canPlay(p)) game = null
-        // Notify only when you are not typing in any window. At the limit an open call's clock restarts every tick
-        // without it calling again.
+        // Notify only when you are not typing in any window, and only for a call or tantrum that has just begun: one
+        // that waits (at the limit, in focus) restarts its clock every tick without calling again.
         const quiet = now - Math.max(...fresh.map(w => w.lastInput)) > T.notify.quietMinutes * 60_000
         const notify = (text: string) => { if (quiet) void $.ui.notify(text, { title: NAME }).catch(() => {}) }
-        if (!resting && p.call && p.call.since !== was.call) notify(tr().notifyCall(nameOf(p.ch), tr().callWord[p.call.reason]))
-        if (!resting && p.tantrum && p.tantrum.since !== was.tantrum) notify(tr().notifyTantrum(nameOf(p.ch)))
+        if (p.call && p.call.reason !== was.call) notify(tr().notifyCall(nameOf(p.ch), tr().callWord[p.call.reason]))
+        if (p.tantrum && !was.tantrum) notify(tr().notifyTantrum(nameOf(p.ch)))
         if (p.dead && !was.dead) {
           const h = await readHistory()
           if (h) await writeSafe(historyPath, (history = bury(p, h)))

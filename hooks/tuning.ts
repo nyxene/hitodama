@@ -5,6 +5,7 @@ export const tuning = {
   stageDecay: { egg: 0, baby: 8, child: 2, teen: 1.5, adult: 1, secret: 1, old: 3 }, // old: the last 20% of its life
   joyStageDecay: { child: 1 } as Record<string, number | undefined>, // mood only, in place of stageDecay
   asleepFactor: 0.3,
+  focus: { decayFactor: 0.5 }, // awake while Claude works in its window: fullness and mood fall at half the rate
   offline: { decayFactor: 0.3 }, // Claude closed: "in the pocket", no calls
   needs: { hungry: 25, sad: 25, tired: 25, sick: 20, dirtyAt: 2 },
   attention: { answerMinutes: 15 }, // an unanswered call is a care mistake
