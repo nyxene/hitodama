@@ -490,6 +490,18 @@ test('the pane lays itself out by its size, and the care buttons are always ther
   }
 })
 
+test('a long journal entry wraps under its text, with the time in a column of its own', async ($, on) => {
+  const long = 'Care mistake: call unanswered for 15 minutes, while the pet waited by the door.'
+  const p = { ...child(), log: [{ t: T0, text: long }] }
+  await session($, on, { 'pet.json': JSON.stringify(p) })
+  const ui = await pane($, 'terminal', 34, 56)
+  const entry = all(await ui.drawn()).find(e => e.type === 'Box' && e.props?.flexDirection === 'row' && all(e).some(x => x.type === 'Text' && JSON.stringify(x).includes(long)))
+  expect(entry).toBeDefined()
+  const [time, text] = (entry!.children as { props: { width: number } }[])
+  expect([time!.props.width, text!.props.width]).toEqual([7, 34 - 7])
+  await ui.unmount()
+})
+
 for (const [colour, colored] of [['screen', false], ['all', true], ['text', true], ['none', false]] as const) {
   kitTest(`with colour ${colour} the bars are ${colored ? "coloured by level from the theme" : "plain"}`, { timeoutMs: 60_000, options: { colour } }, async ($, on) => {
     await session($, on, { 'pet.json': JSON.stringify({ ...child(), joy: 0, sat: 90 }) })

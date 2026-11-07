@@ -459,7 +459,18 @@ export const register: Register = (on, options) => {
       const filled = s.slice(a, b).replace(/░/g, '')
       return <Text>{s.slice(0, a)}<Text color={tone}>{filled}</Text>{s.slice(a + filled.length)}</Text>
     }
-    const lines = (s: string, w: number) => Math.max(1, Math.ceil(width(s) / Math.max(1, w)))
+    // Rows a text takes at a width, wrapped at spaces as the terminal wraps it; a word longer than the width breaks.
+    const lines = (s: string, w: number) => {
+      w = Math.max(1, w)
+      let n = 1, x = 0
+      for (const word of s.split(' ')) {
+        const k = width(word)
+        if (x > 0 && x + 1 + k > w) { n += 1; x = 0 }
+        x += (x > 0 ? 1 : 0) + k
+        while (x > w) { n += 1; x -= w }
+      }
+      return n
+    }
     // Buttons flow in rows, one column apart, each "<key>: <label>".
     const buttonRows = (w: number) => {
       let rowsUsed = 1, x = 0
@@ -510,6 +521,14 @@ export const register: Register = (on, options) => {
     )
     const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW)) : (layout === 'stack' ? screenH : 0) + textRows(textW, meta)) + 2
     const logRows = Math.max(0, rows - used)
+    // Journal entries wrap under their text, the time standing alone on the left; as many whole entries as fit.
+    const logW = isTerminal && layout === 'stack' ? stackW : cols, TIME = 7
+    const entries: { time: string; text: string }[] = []
+    for (let i = 0, left = logRows - 1; i < v.log.length; i++) {
+      const l = v.log[i]!, text = l.slice(TIME), n = lines(text, logW - TIME)
+      if (n > left) break
+      entries.push({ time: l.slice(0, TIME), text }); left -= n
+    }
     // The title takes the pane's whole width; under it, a stacked terminal pane is as wide as the screen.
     return (
       <Box flexDirection="column">
@@ -523,10 +542,15 @@ export const register: Register = (on, options) => {
           {layout === 'side'
             ? <Box flexDirection="row" columnGap={2}>{screen}{text}</Box>
             : text}
-          {v.mode !== 'stats' && logRows > 1 && v.log.length > 0 && (
+          {v.mode !== 'stats' && entries.length > 0 && (
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor>{tr().journal}</Text>
-              {v.log.slice(0, logRows - 1).map(l => <Text wrap="truncate-end" dimColor>{l}</Text>)}
+              {entries.map(e => (
+                <Box flexDirection="row">
+                  <Box width={TIME}><Text dimColor>{e.time}</Text></Box>
+                  <Box width={logW - TIME}><Text dimColor>{e.text}</Text></Box>
+                </Box>
+              ))}
             </Box>
           )}
         </Box>
