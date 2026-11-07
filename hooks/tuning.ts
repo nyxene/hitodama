@@ -3,6 +3,7 @@ export const tuning = {
   decayPerHour: { satiety: 6, energy: 4, joy: 3 }, // loss for an awake adult
   sleepRecoverPerHour: 15, // energy regained while asleep
   stageDecay: { egg: 0, baby: 8, child: 2, teen: 1.5, adult: 1, secret: 1, old: 3 }, // old: the last 20% of its life
+  joyStageDecay: { child: 1 } as Record<string, number | undefined>, // mood only, in place of stageDecay
   asleepFactor: 0.3,
   offline: { decayFactor: 0.3 }, // Claude closed: "in the pocket", no calls
   needs: { hungry: 25, sad: 25, tired: 25, sick: 20, dirtyAt: 2 },

@@ -161,10 +161,12 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
   const life = CHARS[p.ch]?.lifeDays
   const old = life !== undefined && p.ageDays >= life * 0.8
   const off = offline ? T.offline.decayFactor : 1
-  const mul = (old ? T.stageDecay.old : T.stageDecay[st]) * (p.asleep ? T.asleepFactor : 1) * off
+  const now = (p.asleep ? T.asleepFactor : 1) * off
+  const mul = (old ? T.stageDecay.old : T.stageDecay[st]) * now
+  const joyMul = (old ? T.stageDecay.old : T.joyStageDecay[st] ?? T.stageDecay[st]) * now
 
   p.sat = clamp(p.sat - T.decayPerHour.satiety * mul * h)
-  p.joy = clamp(p.joy - T.decayPerHour.joy * mul * h)
+  p.joy = clamp(p.joy - T.decayPerHour.joy * joyMul * h)
   p.en = clamp(p.asleep ? p.en + T.sleepRecoverPerHour * h
     : t - dtMs >= restFrom ? p.en + T.rest.perHour * h
     : p.en - T.decayPerHour.energy * mul * h)
