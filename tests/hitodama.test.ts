@@ -386,6 +386,7 @@ test('text rows are counted as the terminal wraps them: at spaces, and at line b
   expect(wrapRows('abcdefghij', 4)).toBe(3) // a word longer than the width breaks
   expect(wrapRows('a\nb', 10)).toBe(2)
   expect(wrapRows('', 10)).toBe(1)
+  expect(wrapRows('あいうえお', 5)).toBe(3) // two wide characters a row at an odd width, never one split
 })
 
 test('the LCD shows no scenery or particles, and a character name from outside draws as the ghost', () => {
@@ -537,6 +538,26 @@ kitTest('beside the screen the text always fits the pane, so the buttons stay in
   expect(sides).toBeGreaterThan(10)
 })
 
+test('a pane too small for the bars shows the main needs on one line, and every button within its rows', async ($, on) => {
+  await session($, on, { 'pet.json': JSON.stringify({ ...child(), tantrum: { since: T0 } }) })
+  for (const [cols, rows] of [[40, 10], [40, 9], [30, 9]]) {
+    const ui = await pane($, 'terminal', cols!, rows!)
+    const els = all(await ui.drawn())
+    const texts = els.filter(e => e.type === 'Text').map(e => [e.children].flat(9).filter(s => typeof s === 'string').join(''))
+    const needs = texts.find(s => s.includes(' · ') && /Fullness \d+/.test(s))
+    expect(needs).toBeDefined()
+    expect(texts.some(s => s.includes('█') || s.includes('░'))).toBe(false)
+    // Counted by hand, apart from the code's estimate: the title, the message, the needs line, the buttons.
+    const msg = texts.find(s => s.startsWith('Tantrum'))!
+    const buttons = els.filter(e => e.type === 'Button').map(b => `${b.props!.hotkey}: ${b.props!.label}`)
+    let rowsUsed = 1 + Math.ceil(msg.length / cols!) + Math.ceil(needs!.length / cols!), x = 0, brow = 1
+    for (const b of buttons) { if (x > 0 && x + 1 + b.length > cols!) { brow++; x = b.length } else x += (x ? 1 : 0) + b.length }
+    rowsUsed += brow
+    expect(rowsUsed).toBeLessThanOrEqual(rows!)
+    await ui.unmount()
+  }
+})
+
 test("another window's room shows as one short line, whatever its file holds", async ($, on) => {
   const other: Win = { ...win, sid: 's2', room: 'evil\nroom'.repeat(50), alive: T0 + HOUR, asking: T0 }
   await session($, on, { 'pet.json': JSON.stringify(child()), 'seen/s2.json': JSON.stringify(other) })
@@ -565,7 +586,8 @@ for (const options of [{}, { colourScreen: false }, { colourBars: true }, { colo
   kitTest(`the screen is ${lcd ? 'an LCD' : 'in colour'} and the bars ${colored ? 'coloured by level' : 'plain'} with ${JSON.stringify(options)}`, { timeoutMs: 60_000, options }, async ($, on) => {
     await session($, on, { 'pet.json': JSON.stringify({ ...child(), joy: 0, sat: 90 }) })
     const ui = await pane($, 'terminal', 70, 60)
-    const tones = all(await ui.drawn()).flatMap(e => (e.type === 'Text' && typeof e.props?.color === 'string' && e.props.color !== 'yellow' ? [e.props.color] : []))
+    // A colour counts only on text that shows: an empty bar colours its number.
+    const tones = all(await ui.drawn()).flatMap(e => (e.type === 'Text' && typeof e.props?.color === 'string' && e.props.color !== 'yellow' && [e.children].flat(9).join('').trim() ? [e.props.color] : []))
     expect(tones.includes('error')).toBe(colored) // mood 0
     expect(tones.includes('success')).toBe(colored) // fullness 90
     const cells = all(await ui.drawn()).find(e => e.type === 'Raster')!.props!.cells as string

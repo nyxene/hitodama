@@ -126,17 +126,25 @@ export function title(p: Pet, now: number): string {
   return `${nameOf(p.ch)} · ${tr().stage[stageOf(p)]} · ${age(p, now)}`
 }
 
-// Rows a text takes at a width, wrapped at spaces as the terminal wraps it: a word longer than the width breaks, and a
-// line break starts a row.
+// Rows a text takes at a width, wrapped at spaces as the terminal wraps it: a word longer than the width (or a run of
+// CJK text, which has no spaces) breaks between characters, a wide character never split; a line break starts a row.
 export function wrapRows(s: string, w: number): number {
   w = Math.max(1, w)
   return s.split('\n').reduce((rows, line) => {
     let n = 1, x = 0
     for (const word of line.split(' ')) {
       const k = width(word)
-      if (x > 0 && x + 1 + k > w) { n += 1; x = 0 }
-      x += (x > 0 ? 1 : 0) + k
-      while (x > w) { n += 1; x -= w }
+      if (k <= w) {
+        if (x > 0 && x + 1 + k > w) { n += 1; x = 0 }
+        x += (x > 0 ? 1 : 0) + k
+        continue
+      }
+      if (x > 0) { n += 1; x = 0 }
+      for (const ch of word) {
+        const c = width(ch)
+        if (x + c > w) { n += 1; x = 0 }
+        x += c
+      }
     }
     return rows + n
   }, 0)

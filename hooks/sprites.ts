@@ -1,4 +1,5 @@
-// Icons and screen scenes. A scene → Uint8Array (1 = pixel on). Characters live in their lines.
+// Icons and screen scenes. A scene → Uint8Array of inks (0 nothing, 1 the pet, from 2 kinds of things: K). Characters
+// live in their lines.
 import { bmp, bubble, E, grid, H, rect, shape, W, type CharDraw, type Grid, type Mask, type Shape } from './draw'
 import { CHARS, DRAW } from './lines'
 
@@ -340,23 +341,25 @@ const CLOUD = ['..####....', '.######.##', '##########', '.########.']
 const SPARKS = [[-10, 2], [-12, 6], [12, 9]]
 // Scenery behind the picture and particles over it, on a w × h picture (32 × 24 or larger).
 function decorate(g: Uint8Array, w: number, h: number, look: ScreenLook, night: boolean) {
-  const t = look.t ?? 0, k = w / 64
+  const t = look.t ?? 0, k = w / 64, s = Math.max(1, Math.round(k))
   const put = (x: number, y: number, v: number, over = false) => {
     x = Math.round(x); y = Math.round(y)
     if (x >= 0 && x < w && y >= 0 && y < h && (over || !g[y * w + x])) g[y * w + x] = v
   }
+  // A pixel of a drawing made for 64 × 48, as an s × s block on a larger picture.
+  const block = (x: number, y: number, v: number, over = false) => { for (let i = 0; i < s; i++) for (let j = 0; j < s; j++) put(x + i, y + j, v, over) }
   if (look.scenery) {
     const floor = Math.round((h * 45) / 48)
     for (let x = 0; x < w; x++) { put(x, floor, S.ground); if ((x + t) % 3 === 0) put(x, floor + 1, S.dots) }
     if (night) STARS.forEach(([x, y]) => put(x! * k, y! * k, (x! + t) % 4 ? S.star : S.dim))
-    else CLOUD.forEach((r, y) => [...r].forEach((c, x) => { if (c === '#' && (k >= 1 || (x % 2 === 0 && y % 2 === 0))) put((4 + (t % 20) + x) * k, (3 + y) * k, S.cloud) }))
+    else CLOUD.forEach((r, y) => [...r].forEach((c, x) => { if (c === '#' && (k >= 1 || (x % 2 === 0 && y % 2 === 0))) block((4 + (t % 20) + x) * k, (3 + y) * k, S.cloud) }))
   }
   if (look.particles && ['eat', 'snack', 'idle', 'happy'].includes(look.scene ?? '')) {
     let top = h, sx = 0, n = 0
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (g[y * w + x] === K.pet) { top = Math.min(top, y); sx += x; n++ }
     if (!n) return
     const cx = sx / n, rise = (t % 8) * 2 * Math.max(1, k)
-    IC.heart.forEach((r, y) => [...r].forEach((c, x) => { if (c === '#') put(cx + 6 * Math.max(1, k) + (t % 2) + x, top - 2 - rise + y, S.heart, true) }))
+    IC.heart.forEach((r, y) => [...r].forEach((c, x) => { if (c === '#') block(cx + 6 * s + (t % 2) + x * s, top - 2 - rise - 4 * (s - 1) + y * s, S.heart, true) }))
     if (t % 4 === 1) SPARKS.forEach(([dx, dy]) => put(cx + dx! * Math.max(1, k), top + dy! * Math.max(1, k), S.spark, true))
   }
 }

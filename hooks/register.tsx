@@ -466,8 +466,15 @@ export const register: Register = (on, options) => {
       const tone = i === 5 ? (n >= T.load.bands[2]! ? 'error' : n >= T.load.bands[1]! ? 'warning' : 'success')
         : n < T.needs.sad ? 'error' : n < 50 ? 'warning' : 'success'
       const filled = s.slice(a, b).replace(/░/g, '')
+      // An empty bar has nothing to colour: its number takes the colour instead.
+      if (!filled) return <Text>{s.slice(0, b)}<Text color={tone}>{s.slice(b)}</Text></Text>
       return <Text>{s.slice(0, a)}<Text color={tone}>{filled}</Text>{s.slice(a + filled.length)}</Text>
     }
+    // The main needs on one line, for a pane too small for the bars: "Fullness 81 · Energy 0 · Mood 0 · Health 83".
+    const compactLine = [0, 1, 2, 3].map(i => {
+      const s = v.bars[i] ?? '', a = s.search(/[█░]/)
+      return a < 0 ? s.trim() : `${s.slice(0, a).trim()} ${s.slice(a).replace(/[█░]/g, '').trim().split(/\s+/)[0]}`
+    }).join(' · ')
     const lines = wrapRows
     // Buttons flow in rows, one column apart, each "<key>: <label>".
     const buttonRows = (w: number) => {
@@ -478,8 +485,9 @@ export const register: Register = (on, options) => {
       }
       return rowsUsed
     }
-    const textRows = (w: number, meta = true) => lines(v.msg, w)
-      + (v.mode === 'stats' ? v.stats.reduce((n, l) => n + lines(l, w), 0) : barsAt(w).length + (meta ? lines(v.meta, w) : 0))
+    const textRows = (w: number, meta = true, compact = false) => lines(v.msg, w)
+      + (v.mode === 'stats' ? v.stats.reduce((n, l) => n + lines(l, w), 0)
+        : (compact ? lines(compactLine, w) : barsAt(w).length) + (meta ? lines(v.meta, w) : 0))
       + buttonRows(w)
     // The layout the pane's size allows, with the screen as wide as fits, 32 to maxCols columns: on top with
     // everything under it as wide as the screen, like the body of a pocket device; beside the text in a wide and short
@@ -504,20 +512,24 @@ export const register: Register = (on, options) => {
       screen = <Raster key="lcd" columns={sw} rows={screenH} cells={frameCells(shown.scene, shown.night)} />
     }
     const textW = layout === 'side' ? sideW : layout === 'stack' ? stackW : cols
-    const meta = layout === 'stack' || 1 + textRows(textW) <= rows
+    // Too small even without the model line, the text alone shows the main needs on one line instead of six bars.
+    const compact = layout === 'text' && v.mode !== 'stats' && 1 + textRows(cols, false) > rows
+    const meta = layout === 'stack' || (!compact && 1 + textRows(textW) <= rows)
     const text = (
       <Box flexDirection="column" width={layout === 'side' ? sideW : undefined}>
         <Text>{v.msg}</Text>
         {v.mode === 'stats'
           ? v.stats.map(l => <Text>{l || ' '}</Text>)
-          : barsAt(textW).map(g => <Text wrap="truncate-end">{g.map((i, k) => (k ? <Text>{"   "}{barEl(i)}</Text> : barEl(i)))}</Text>)}
+          : compact
+            ? <Text>{compactLine}</Text>
+            : barsAt(textW).map(g => <Text wrap="truncate-end">{g.map((i, k) => (k ? <Text>{"   "}{barEl(i)}</Text> : barEl(i)))}</Text>)}
         {v.mode !== 'stats' && meta && <Text dimColor>{v.meta}</Text>}
         <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
           {buttons.map(([k, l, a]) => <Button key={`b-${a}`} hotkey={k} plain label={l} onPress={() => press(a)} />)}
         </Box>
       </Box>
     )
-    const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW)) : (layout === 'stack' ? screenH : 0) + textRows(textW, meta)) + 2
+    const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW, meta)) : (layout === 'stack' ? screenH : 0) + textRows(textW, meta, compact)) + 2
     const logRows = Math.max(0, rows - used)
     // Journal entries wrap under their text, the time standing alone on the left; as many whole entries as fit.
     const logW = isTerminal && layout === 'stack' ? stackW : cols, TIME = 7, textCol = Math.max(1, logW - TIME)
