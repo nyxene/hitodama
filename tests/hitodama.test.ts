@@ -86,6 +86,16 @@ test('in focus an open call is not missed and a due tantrum waits; both count ag
   expect([p.cm, p.dm]).toEqual([1, 1])
 })
 
+test('an open tantrum gets its full 15 minutes again once focus ends', () => {
+  const p = child()
+  p.tantrum = { since: p.at }
+  live(p, 30, true)
+  live(p, 14, false)
+  expect([p.dm, !!p.tantrum]).toEqual([0, true])
+  live(p, 2, false)
+  expect(p.dm).toBe(1)
+})
+
 test('in focus a starving or sick pet still calls and its call is missed, and no tantrum starts', () => {
   for (const make of [(p: Pet) => { p.sat = 0 }, (p: Pet) => { p.sick = true }]) {
     const p = child()
@@ -199,11 +209,12 @@ test('at the five-hour limit an open call sends no notification on every tick', 
 
 // A child with fullness `sat` and a tantrum due, in a session whose window runs a turn: the pet it writes after five
 // timer ticks, and how many notifications were sent.
-async function focused($: Engine, on: On, sat: number, open: boolean) {
+async function focused($: Engine, on: On, sat: number, open: boolean, tantrum = false) {
   const p = child()
   p.sat = sat
   p.nextTantrum = p.at + HOUR
   if (open) advance(p, T0 + 3000, utc)
+  if (tantrum) p.tantrum = { since: p.at }
   let notified = 0
   on('ui.notify', () => { notified += 1; return { value: { isSent: true, channel: 'ghostty' } as const } })
   // A calm pet for the tick at session start, before the turn; the one under test from the first tick in focus.
@@ -221,6 +232,12 @@ async function focused($: Engine, on: On, sat: number, open: boolean) {
 test('a call held while Claude works in the pet\'s window sends no notification on every tick', async ($, on) => {
   const { saved, notified } = await focused($, on, 10, true)
   expect(saved.call?.reason).toBe('hungry')
+  expect(notified).toBe(0)
+})
+
+test('a tantrum held while Claude works in the pet\'s window sends no notification on every tick', async ($, on) => {
+  const { saved, notified } = await focused($, on, 80, false, true)
+  expect(saved.tantrum).not.toBeNull()
   expect(notified).toBe(0)
 })
 
