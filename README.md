@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/yokai.png" alt="The egg and the eleven yokai of the line, from the soul flame Hitodama to the umbrella spirit Karakasa" width="720"></p>
+<p align="center"><img src="assets/yokai.png" alt="The egg and the eleven yokai of the line, each in its own colour, from the soul flame Hitodama to the umbrella spirit Karakasa" width="720"></p>
 
 <h1 align="center">Hitodama</h1>
 
@@ -10,9 +10,22 @@
   <a href="https://github.com/nyxene/hitodama/actions/workflows/gates.yml"><img alt="gates" src="https://github.com/nyxene/hitodama/actions/workflows/gates.yml/badge.svg"></a>
 </p>
 
+<p align="center"><img src="assets/eat.png" alt="Kitsune eating from its bowl on the dark screen, hearts rising, clouds drifting over the ground" width="384"></p>
+
 Every life starts as an egg on a small pixel screen. Five minutes later a soul flame hatches, and over about a week it grows through a child and a teen into one of six adult yokai from Japanese folklore, and one of them can turn into a secret seventh. Which one depends on how you look after it: feed it, clean up, put it to bed, answer its calls, stop its tantrums.
 
-It also lives off your session. Long context weighs down its backpack, a high effort setting makes it think hard alongside the model, helpers you start wait with it by the door, night work makes it grumpy, and hitting your usage limit puts it to sleep until the reset: it makes no calls and throws no tantrums, one already open waits, nothing can kill it, and you can still feed it. `/compact` is a relief. The limit it follows is the five-hour one, or the weekly one on a plan without a five-hour limit. Its energy goes on your work: each reply costs by its length and the model, up to a cap, more with a long context or at night, and more still when you use the limit faster than its window passes (less when slower). Energy comes back in sleep, and more slowly once no window has been busy for 15 minutes. What it grows into depends only on its care mistakes and its discipline; a bad mood from your session can still make it call for you.
+## It lives off your session
+
+- **Context** weighs down its backpack; `/compact` is a relief.
+- **Effort**: a high setting makes it think hard alongside the model.
+- **Helpers** you start wait with it by the door.
+- **Night work** makes it grumpy.
+- **Energy** goes on your replies: by their length and the model, up to a cap, more with a long context, at night, or when you use your limit faster than its window passes. It comes back in sleep, and slowly once no window has been busy for 15 minutes.
+- **The usage limit** (the five-hour one, or the weekly one on a plan without it) puts it to sleep until the reset: no calls, no tantrums, nothing can kill it, and you can still feed it.
+- **Focus**: while Claude works in its session and the pet is awake, its fullness and mood fall at half the speed, no tantrum starts, and its calls wait for the turn to end unless it is starving or sick.
+- **Permission prompts**: when Claude asks for permission in one session, the pane in every other one names it.
+
+What it grows into depends only on its care mistakes and its discipline; a bad mood from your session can still make it call for you.
 
 ## Install
 
@@ -33,7 +46,7 @@ The pane opens on the next session start. `/hd` opens it any time, `/hd stats` p
 ## Requirements
 
 - Claude Code 2.1.310 or newer (the version CI tests), in a terminal. The screen is drawn only in the terminal; other surfaces show the text and the buttons.
-- A pane at least 32 columns wide inside its frame. The screen grows with the pane up to 64 columns, keeping its shape, and everything under it is as wide as the screen. In a wide and short pane the text goes beside the screen; in one too small for the screen, the pane shows the text and the buttons alone.
+- A pane at least 32 columns wide inside its frame.
 
 ## Care
 
@@ -52,26 +65,36 @@ Keys work while the pane has focus.
 
 During play, 1 and 2 guess left or right and 9 quits the game.
 
-A call left unanswered for 15 minutes is a care mistake; a tantrum left alone is a discipline mistake. It falls asleep at its bedtime; asleep it calls only for the light or medicine, and hunger does not count towards starving. Mistakes decide what it grows into, and the rules are in [docs/yokai.md](docs/yokai.md), with the folklore behind each character. Starve it for 12 hours, or let an illness run, and it dies; a grown yokai also dies of old age at the end of its life span. A new egg arrives a minute later.
+- A call left unanswered for 15 minutes is a care mistake; a tantrum left alone is a discipline mistake. Mistakes decide what it grows into: the rules and the folklore behind each character are in [docs/yokai.md](docs/yokai.md).
+- It falls asleep at its bedtime. Asleep it calls only for the light or medicine, and hunger does not count towards starving.
+- Starve it for 12 hours, or let an illness run, and it dies; a grown yokai also dies of old age at the end of its life span. A new egg arrives a minute later.
+- While Claude Code is closed the pet is "in your pocket": its needs drop at 30% of the speed, it makes no calls, and nothing can kill it, so a weekend away is safe. It still ages, and it will be hungry when you come back.
+- With several sessions open, the pet stays in the one you typed in last, and the others show where it went.
 
-While Claude works in the session the pet is in (a turn or helpers running, background and scheduled ones too), it keeps you company instead of asking for attention: awake, its fullness and mood fall at half the speed, no call or tantrum starts, and one already open gets its full 15 minutes again once the turn ends. A pet that is starving or sick still calls. Asleep, at the usage limit or in your pocket nothing changes. A turn or helpers whose end never came stop counting two hours after the session last did anything.
+## The pane
 
-While Claude Code is closed the pet is "in your pocket": its needs drop at 30% of the speed, it makes no calls (one already open gets its full 15 minutes again when you return), and nothing can kill it, so a weekend away is safe. It still ages, and a pet whose life span ran out while you were away dies once you are back. It will be hungry when you come back, and hunger counts towards starving again from then, on top of any hours it had starved before. With several sessions open, the pet stays in the one you typed in last, and the others show where it went. When Claude asks for permission in one session, the pane in every other one names it.
+The pane lays itself out by its size:
+
+- **Tall:** the screen on top, from 32 up to 64 columns wide, keeping its shape, with everything under it as wide as the screen.
+- **Wide and short:** the screen on the left, the text and the buttons beside it.
+- **Too small for the screen:** the text and the buttons alone; when even they do not fit, the needs go on one line.
+
+The journal under it keeps what happened, each entry wrapping under its own text.
 
 ## Settings
 
-Run `/config` and find Hitodama.
+Run `/config` and find Hitodama. Each setting is described in [docs/settings.md](docs/settings.md), with a picture of it off and on where the screen shows it.
 
-| Option | Values | Default |
+| Setting | Default | |
 | --- | --- | --- |
-| `language` | `auto` follows Claude Code's own language setting, known by its name or code ("Русский", "Japanese", "de"…), English if it is none of these; or set by hand: `en` English, `ru` Русский, `zh` 中文, `ja` 日本語, `ko` 한국어, `es` Español, `pt` Português, `de` Deutsch, `fr` Français | `auto` |
-| `colourScreen` | on: a dark screen, each yokai in its own colour; off: two greys, as on a pocket LCD | on |
-| `colourBars` | on: the bars under the screen coloured by level, green, yellow, red | off |
-| `detail` | `pixel` 32 × 24 pixels; `braille` the picture smoothed and drawn in braille dots, four times as many in the same space (how they look depends on the terminal's font) | `pixel` |
-| `smallPixels` | on: on a screen wider than 32 columns, the picture smoothed to 64 × 48 pixels, each smaller than the 32 × 24 ones (braille is always smoothed) | on |
-| `itemColours` | on: on the coloured screen, things around the pet by kind (food yellow, droppings brown, sleep white, hearts pink, medicine blue, alarms red); off: all yellow | on |
-| `scenery` | on: on the coloured screen, the ground, clouds by day and stars by night | on |
-| `particles` | on: on the coloured screen, hearts rising while the pet eats or walks | on |
+| `language` | `auto` | Claude Code's own language, or one set by hand |
+| `colourScreen` | on | each yokai in its own colour; off, the two-grey LCD |
+| `colourBars` | off | the bars coloured by level |
+| `detail` | `pixel` | or `braille`: finer, in braille dots |
+| `smallPixels` | on | smaller pixels on a screen wider than 32 columns |
+| `itemColours` | on | food, droppings, hearts and medicine each in their colour |
+| `scenery` | on | the ground, clouds by day, stars by night |
+| `particles` | on | hearts rising while it eats or walks |
 
 ## Privacy
 
