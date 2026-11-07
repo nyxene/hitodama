@@ -370,10 +370,11 @@ test('the coloured screen draws the pet in its colour on a dark screen, items by
   expect(colours('egg', 'egg', { kinds: true }).has(FOOD)).toBe(false)
 })
 
-test('the backpack is graphite on the coloured screen, whatever the item colours, darker at night, and the LCD ink on the LCD', () => {
-  const PACK = 0x6e6e78, pack = (look: Partial<ScreenLook> = {}, night = false) =>
-    new Set([...words(cells(scene('idle', { ch: 'kitsune', load: 85 }, 0), night, 32, { lcd: false, detail: 'pixel', color: colorOf('kitsune'), scene: 'idle', t: 0, ...look }))].filter((_, i) => i % 3))
+test('the backpack is graphite on the coloured screen, worn or left behind, whatever the item colours, darker at night, and the LCD ink on the LCD', () => {
+  const PACK = 0x6e6e78, pack = (look: Partial<ScreenLook> = {}, night = false, id = 'idle') =>
+    new Set([...words(cells(scene(id, { ch: 'kitsune', load: 85 }, 0), night, 32, { lcd: false, detail: 'pixel', color: colorOf('kitsune'), scene: id, t: 0, ...look }))].filter((_, i) => i % 3))
   expect([pack().has(PACK), pack({ kinds: false }).has(PACK), pack({ kinds: true }).has(PACK)]).toEqual([true, true, true])
+  expect([pack({ kinds: false }, false, 'away').has(PACK), pack({ kinds: true }, false, 'away').has(PACK)]).toEqual([true, true])
   expect(colours('idle', 'kitsune').has(PACK)).toBe(false) // no backpack below half the load
   expect([pack({}, true).has(PACK), pack({}, true).has(0x4d4e56)]).toEqual([false, true]) // dimmed at night, as the pet is
   expect([...pack({ lcd: true })].sort()).toEqual([0x232820, 0xc4ccb2].sort())

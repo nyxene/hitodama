@@ -257,7 +257,7 @@ export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
         for (let x = 12, i = 0; x < 28; x += 4, i++) { const y = 21 + (i % 2); g.set(x, y, K.pale); g.set(x + 1, y, K.pale) }
         if (t % 2) bmp(g, 29, 10, IC.arrowR, false, INK.arrowR)
         const pk = packFor(load)
-        if (pk) { rect(g, 3, 22 - pk.h, pk.w + 1, pk.h, K.pale); for (let i = 1; i < pk.w; i++) g.set(3 + i, 24 - pk.h, K.pale) }
+        if (pk) { rect(g, 3, 22 - pk.h, pk.w + 1, pk.h, K.pack); for (let i = 1; i < pk.w; i++) g.set(3 + i, 24 - pk.h, K.pack) }
       })
       poops = 0; agents = 0
       break
