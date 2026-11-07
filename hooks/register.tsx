@@ -443,12 +443,41 @@ export const register: Register = (on, options) => {
       v.mode === 'game' ? [['1', L.left, 'left'], ['2', L.right, 'right'], ['9', L.quit, 'quit']]
       : v.mode === 'stats' ? [['8', L.back, 'stats']]
       : ACTIONS.map(([k, a]) => [k, L[a as keyof typeof L], a])
-    // Bars in two columns on a wide pane: fullness | health, energy | discipline, mood | load.
-    const pairs = cols >= 2 * width(v.bars[0] ?? ''.padEnd(25)) + 3
-    const barRows = pairs ? [0, 1, 2].map(i => `${v.bars[i] ?? ''}   ${v.bars[i + 3] ?? ''}`) : v.bars
-    const lines = (s: string) => Math.max(1, Math.ceil(width(s) / Math.max(1, cols)))
-    const buttonsLen = buttons.reduce((n, [, l]) => n + width(l) + 4, 0)
-    const used = 1 + (isTerminal ? 12 * scale : 1) + lines(v.msg) + barRows.length + lines(v.meta) + lines(' '.repeat(buttonsLen)) + 2
+    // Bars in two columns where they fit side by side: fullness | health, energy | discipline, mood | load.
+    const barsAt = (w: number) => w >= 2 * width(v.bars[0] ?? ''.padEnd(25)) + 3
+      ? [0, 1, 2].map(i => `${v.bars[i] ?? ''}   ${v.bars[i + 3] ?? ''}`) : v.bars
+    const lines = (s: string, w: number) => Math.max(1, Math.ceil(width(s) / Math.max(1, w)))
+    // Buttons flow in rows, one column apart, each "<key>: <label>".
+    const buttonRows = (w: number) => {
+      let rowsUsed = 1, x = 0
+      for (const [, l] of buttons) {
+        const n = width(l) + 3
+        if (x > 0 && x + 1 + n > w) { rowsUsed += 1; x = n } else x += (x > 0 ? 1 : 0) + n
+      }
+      return rowsUsed
+    }
+    const textRows = (w: number, meta = true) => lines(v.msg, w)
+      + (v.mode === 'stats' ? v.stats.length : barsAt(w).length + (meta ? lines(v.meta, w) : 0)) + buttonRows(w)
+    // The layout the pane's size allows: the screen above the text when both fit; beside it in a wide and short pane;
+    // the text alone when the screen fits neither way, without the model line if that is what keeps the buttons in.
+    const screenW = 32 * scale, screenH = isTerminal ? 12 * scale : 1, sideW = cols - screenW - 2
+    const layout = 1 + screenH + textRows(cols) <= rows ? 'stack'
+      : isTerminal && sideW >= 28 && rows >= 1 + screenH ? 'side' : 'text'
+    const textW = layout === 'side' ? sideW : cols
+    const meta = layout !== 'text' || 1 + textRows(cols) <= rows
+    const text = (
+      <Box flexDirection="column" width={layout === 'side' ? sideW : undefined}>
+        <Text>{v.msg}</Text>
+        {v.mode === 'stats'
+          ? v.stats.map(l => <Text>{l || ' '}</Text>)
+          : barsAt(textW).map(l => <Text wrap="truncate-end">{l}</Text>)}
+        {v.mode !== 'stats' && meta && <Text dimColor>{v.meta}</Text>}
+        <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+          {buttons.map(([k, l, a]) => <Button key={`b-${a}`} hotkey={k} plain label={l} onPress={() => press(a)} />)}
+        </Box>
+      </Box>
+    )
+    const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW)) : (layout === 'stack' ? screenH : 0) + textRows(cols, meta)) + 2
     const logRows = Math.max(0, rows - used)
     return (
       <Box flexDirection="column">
@@ -457,15 +486,10 @@ export const register: Register = (on, options) => {
           {v.call ? <Text color="yellow" bold> (!)</Text> : ''}
           <Text dimColor> {v.room}</Text>
         </Text>
-        {screen}
-        <Text>{v.msg}</Text>
-        {v.mode === 'stats'
-          ? v.stats.map(l => <Text>{l || ' '}</Text>)
-          : barRows.map(l => <Text wrap="truncate-end">{l}</Text>)}
-        {v.mode !== 'stats' && <Text dimColor>{v.meta}</Text>}
-        <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-          {buttons.map(([k, l, a]) => <Button key={`b-${a}`} hotkey={k} plain label={l} onPress={() => press(a)} />)}
-        </Box>
+        {layout === 'stack' && screen}
+        {layout === 'side'
+          ? <Box flexDirection="row" columnGap={2}>{screen}{text}</Box>
+          : text}
         {v.mode !== 'stats' && logRows > 1 && v.log.length > 0 && (
           <Box flexDirection="column" marginTop={1}>
             <Text dimColor>{tr().journal}</Text>
