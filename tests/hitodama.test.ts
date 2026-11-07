@@ -453,7 +453,7 @@ test('the pane lays itself out by its size, and the care buttons are always ther
     [56, 56, 'stack', 56], // the screen as wide as the pane, everything under it as wide
     [34, 56, 'stack', 34],
     [90, 17, 'side', 42], // wide and short: the text beside a screen as tall as the pane allows
-    [30, 14, 'text', null], // too small for the screen: the text alone
+    [30, 12, 'text', null], // too small for the screen: the text alone
   ]
   for (const [cols, rows, layout, screen] of cases) {
     const ui = await pane($, 'terminal', cols, rows)
@@ -464,6 +464,8 @@ test('the pane lays itself out by its size, and the care buttons are always ther
     const side = els.some(e => e.type === 'Box' && e.props?.flexDirection === 'row' && all(e).some(x => x.type === 'Raster'))
     expect(side ? 'side' : lcd ? 'stack' : 'text').toBe(layout)
     if (layout === 'stack') expect((tree as { props: { width?: number } }).props.width).toBe(screen!)
+    // Too small for everything, the model line gives way so the buttons fit.
+    expect(!!(await ui.find({ type: 'Text', text: /helpers/ }))).toBe(layout !== 'text')
     for (const k of ['b-eat', 'b-snack', 'b-game', 'b-clean', 'b-heal', 'b-light', 'b-scold', 'b-stats']) expect(await ui.find({ key: k })).toBeDefined()
     await ui.unmount()
   }
