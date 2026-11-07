@@ -22,8 +22,9 @@
     "language": {
       "type": "string",
       "title": "Language",
-      "description": "Interface language: en English, ru Русский, zh 中文, ja 日本語, ko 한국어, es Español, pt Português, de Deutsch, fr Français.",
+      "description": "Interface language: auto follows Claude Code's language setting (English if it is none of these); or en English, ru Русский, zh 中文, ja 日本語, ko 한국어, es Español, pt Português, de Deutsch, fr Français.",
       "options": [
+        "auto",
         "en",
         "ru",
         "zh",
@@ -34,7 +35,7 @@
         "de",
         "fr"
       ],
-      "default": "en"
+      "default": "auto"
     },
     "colourScreen": {
       "type": "boolean",

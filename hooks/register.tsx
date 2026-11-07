@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { HitodamaView } from '../types'
-import { setLang, t as tr, width } from './i18n'
+import { LANGS, langFrom, setLang, t as tr, width, type Lang } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, colorOf, scene, screenRows, W, type Detail } from './sprites'
 import { tuning as T } from './tuning'
@@ -18,7 +18,10 @@ type Press = Act | 'stats' | 'left' | 'right' | 'quit'
 const ACTIONS: [string, Press][] = [['1', 'eat'], ['2', 'snack'], ['3', 'game'], ['4', 'clean'], ['5', 'heal'], ['6', 'light'], ['7', 'scold'], ['8', 'stats']]
 
 export const register: Register = (on, options) => {
-  setLang(options.language)
+  // A language set by hand wins; auto (the default) follows Claude Code's own language setting, else English.
+  const auto = !LANGS.includes(options.language as Lang)
+  setLang(auto ? 'en' : options.language)
+  const follow = (claude: unknown) => { if (auto) setLang(langFrom(claude) ?? 'en') }
   // Each window keeps itself in seen/<session>.json, so other windows see it and it survives a mod reload.
   let win: Win = { sid: '', room: '', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'medium', turn: false, agents: 0, errors: 0, limit: 0, seq: 0, events: [] }
   let pet: Pet | null = null
@@ -102,6 +105,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     // A `claude -p` run or the SDK has nobody at the prompt: it must not take the pet from a window that has.
     if (!e.isInteractive) return next(e)
+    if (auto) follow((await $.config.list().catch(() => [])).find(r => r.key === 'language')?.value)
     const sid = await $.session.id()
     const cwd = e.cwd
     // No home folder, no pet: never fall back to writing into the project, as a relative path would.
@@ -352,6 +356,16 @@ export const register: Register = (on, options) => {
     if (e.origin.kind !== 'clear') touch(await $.clock.now(), true)
     return next(e)
   })
+  // Claude Code's language changed in /config: an auto pet follows it at once.
+  on('config.set', async ($, e, next) => {
+    const res = await next(e)
+    if (e.key === 'language' && res.deny === undefined) {
+      follow(res.value)
+      await io?.tick()
+    }
+    return res
+  }).catch(($, e, next) => next(e))
+
   on('prompt.submit', async ($, e, next) => {
     touch(await $.clock.now())
     win.asking = 0

@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code/testing'
 
-import { LANGS, setLang, t as tr } from '../hooks/i18n'
+import { LANGS, langFrom, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
 import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
 import { cells, colorOf, scene, screenRows, type ScreenLook } from '../hooks/sprites'
@@ -556,6 +556,45 @@ test('a pane too small for the bars shows the main needs on one line, and every 
     expect(rowsUsed).toBeLessThanOrEqual(rows!)
     await ui.unmount()
   }
+})
+
+test("a language is known by its code, its English name or its own name, as Claude Code's setting may hold it", () => {
+  expect(['Русский', 'russian', 'ru', 'Japanese (日本語)', '中文', 'Deutsch', 'English', 'Klingon', ''].map(langFrom))
+    .toEqual(['ru', 'ru', 'ru', 'ja', 'zh', 'de', 'en', null, null])
+})
+
+// The pane's title line with Claude Code's language set to `claude` and the pet's own setting `options`.
+async function titleIn($: Engine, on: On, claude: string) {
+  let language = claude
+  on('config.list', () => ({ value: [{ key: 'language', label: 'Language', kind: 'text', value: language }] }) as never)
+  on('config.set', (_, e) => { language = String(e.value); return { value: e.value } })
+  await session($, on, { 'pet.json': JSON.stringify(child()) })
+  const text = async () => {
+    const ui = await pane($, 'terminal', 70, 60)
+    const title = (await ui.drawn() as { children: unknown[] }).children[0] // the pane's first line
+    await ui.unmount()
+    return JSON.stringify(title)
+  }
+  return { text, set: (v: string) => $.config.set({ key: 'language', value: v } as never) }
+}
+const stageIn = (l: (typeof LANGS)[number]) => { setLang(l); const s = tr().stage.child; setLang('en'); return s }
+
+kitTest("by default the pet speaks Claude Code's language, and follows it when it changes", { timeoutMs: 60_000 }, async ($, on) => {
+  const s = await titleIn($, on, 'Русский')
+  expect(await s.text()).toContain(stageIn('ru'))
+  await s.set('Deutsch')
+  expect(await s.text()).toContain(stageIn('de'))
+  await s.set('Klingon')
+  expect(await s.text()).toContain(stageIn('en'))
+  setLang('en')
+})
+
+kitTest("a language set by hand wins over Claude Code's", { timeoutMs: 60_000, options: { language: 'fr' } }, async ($, on) => {
+  const s = await titleIn($, on, 'Русский')
+  expect(await s.text()).toContain(stageIn('fr'))
+  await s.set('Deutsch')
+  expect(await s.text()).toContain(stageIn('fr'))
+  setLang('en')
 })
 
 test("another window's room shows as one short line, whatever its file holds", async ($, on) => {

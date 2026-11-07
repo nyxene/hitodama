@@ -64,7 +64,7 @@ Run `/config` and find Hitodama.
 
 | Option | Values | Default |
 | --- | --- | --- |
-| `language` | `en` English, `ru` Русский, `zh` 中文, `ja` 日本語, `ko` 한국어, `es` Español, `pt` Português, `de` Deutsch, `fr` Français | `en` |
+| `language` | `auto` follows Claude Code's own language setting, known by its name or code ("Русский", "Japanese", "de"…), English if it is none of these; or set by hand: `en` English, `ru` Русский, `zh` 中文, `ja` 日本語, `ko` 한국어, `es` Español, `pt` Português, `de` Deutsch, `fr` Français | `auto` |
 | `colourScreen` | on: a dark screen, each yokai in its own colour; off: two greys, as on a pocket LCD | on |
 | `colourBars` | on: the bars under the screen coloured by level, green, yellow, red | off |
 | `detail` | `pixel` 32 × 24 pixels; `braille` the picture smoothed and drawn in braille dots, four times as many in the same space (how they look depends on the terminal's font) | `pixel` |
@@ -78,7 +78,7 @@ Run `/config` and find Hitodama.
 Hitodama makes no network requests and sends nothing anywhere. What it touches:
 
 - **Files:** reads and writes only `~/.claude/hitodama/`: `pet.json` (the pet, its journal, its statistics with the models, effort levels and token counts, and the session ids whose events it has applied), `history.json` (past lives and seen characters), `pet.prev.json` and `history.prev.json` (spare copies of the two, each written just before it) and `seen/<session>.json` (one small file per session, so sessions can tell who has the pet; mods cannot delete files, so old ones stay until you remove them).
-- **Session data:** the session id (to name its file), the name of the repository or working folder (shown in the pane and in your other sessions), the model name, effort level, context fill percentage, the five-hour usage percentage (or the weekly one when there is no five-hour limit) with its reset time and when it was read, the number of reply tokens, helper and failed tool counts, aborted turns, compactions, when you last typed, and when Claude Code showed a permission prompt (it is told the notice's text, such as the tool's name, and keeps only that one showed). It never reads your prompts, replies, files or transcript.
+- **Session data:** the session id (to name its file), the name of the repository or working folder (shown in the pane and in your other sessions), the model name, effort level, context fill percentage, the five-hour usage percentage (or the weekly one when there is no five-hour limit) with its reset time and when it was read, the number of reply tokens, helper and failed tool counts, aborted turns, compactions, when you last typed, and when Claude Code showed a permission prompt (it is told the notice's text, such as the tool's name, and keeps only that one showed). With the `auto` language it also reads Claude Code's `/config` rows and keeps only the language setting. It never reads your prompts, replies, files or transcript.
 - **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either, or when it is not an absolute path, it writes one line saying so to the transcript and does nothing else.
 - **Processes:** runs `date +%z` once per session (`/bin/date`, then `/usr/bin/date`, then the one on `PATH`, each tried only when the one before gave no offset) to learn your local UTC offset for bedtimes; without it, it takes the offset the runtime reports.
 - **Sessions:** only sessions with a person at the prompt take part; `claude -p` runs and the SDK leave the pet alone.

@@ -926,6 +926,26 @@ export const setLang = (l: unknown) => { current = (LANGS as readonly unknown[])
 export const lang = () => current
 export const t = (): Dict => DICTS[current]
 
+// The names a language goes by, as Claude Code's free-text language setting may hold them: its code, its English
+// name and its own name.
+const NAMES: Record<Lang, string[]> = {
+  en: ['en', 'english'],
+  ru: ['ru', 'russian', 'русский'],
+  zh: ['zh', 'chinese', 'mandarin', '中文', '汉语', '漢語', '简体中文', '繁體中文'],
+  ja: ['ja', 'japanese', '日本語'],
+  ko: ['ko', 'korean', '한국어'],
+  es: ['es', 'spanish', 'español', 'espanol', 'castellano'],
+  pt: ['pt', 'portuguese', 'português', 'portugues'],
+  de: ['de', 'german', 'deutsch'],
+  fr: ['fr', 'french', 'français', 'francais'],
+}
+// The language a name stands for ("Русский", "russian", "ru", "Japanese (日本語)"), or null when it is none of ours.
+export function langFrom(name: unknown): Lang | null {
+  const words = String(name ?? '').toLowerCase().split(/[\s,;:()[\]/_.-]+/).filter(Boolean)
+  for (const l of LANGS) if (words.some(w => NAMES[l].includes(w))) return l
+  return null
+}
+
 // Terminal width of a string: CJK and fullwidth characters take two columns.
 const wide = (c: number) => (c >= 0x1100 && c <= 0x115f) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xfe30 && c <= 0xfe4f) || (c >= 0xff00 && c <= 0xff60) || (c >= 0xffe0 && c <= 0xffe6)
 export const width = (s: string) => [...s].reduce((n, ch) => n + (wide(ch.codePointAt(0)!) ? 2 : 1), 0)
