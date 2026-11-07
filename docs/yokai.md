@@ -1,6 +1,8 @@
 # The Yokai line
 
-In Japanese folklore a night parade of a hundred spirits, the *hyakki yagyō*, walks the streets after dark. This line is a small part of it. Every character is a figure of folklore in the public domain, drawn from scratch for an LCD of 32 × 24 pixels.
+In Japanese folklore a night parade of a hundred spirits, the *hyakki yagyō*, walks the streets after dark. This line is a small part of it. Every character is a figure of folklore in the public domain, drawn from scratch for a screen of 32 × 24 pixels, each in its own colour.
+
+<img src="../assets/yokai.png" alt="The egg and the eleven yokai of the line, each in its own colour" width="720">
 
 ## How they grow
 
@@ -31,44 +33,66 @@ A life span counts the pet's days since the egg, not its days as an adult: Nuppe
 
 ### Hitodama 人魂 · baby
 
+<img src="../assets/yokai/hitodama.png" alt="Hitodama" width="192">
+
 A soul flame: a pale ball with a tail that drifts slowly above the ground at dusk. It was said to be the soul of someone who had just died, leaving the body, and was most often seen over graveyards and rice fields on summer nights. Every life of this line starts with one.
 
 ### Sunekosuri 脛擦り · child · sleeps 20:00–9:00
+
+<img src="../assets/yokai/sunekosuri.png" alt="Sunekosuri" width="192">
 
 A yokai from Okayama Prefecture. On rainy nights a small creature like a dog or a cat slips between a walker's legs and rubs against their shins until they stumble. It does no other harm.
 
 ### Kitsune 狐 · teen · sleeps 21:00–9:00
 
+<img src="../assets/yokai/kitsune.png" alt="Kitsune" width="192">
+
 Foxes in Japanese belief gain power with age: they learn to take human shape, to cast illusions and to light fox fires. The wisest serve as messengers of the deity Inari. The older the fox, the more tails it has.
 
 ### Tanuki 狸 · teen · sleeps 21:00–9:00
+
+<img src="../assets/yokai/tanuki.png" alt="Tanuki" width="192">
 
 A shape-shifting raccoon dog, cheerful and greedy. It puts a leaf on its head to change shape and drums on its own belly on moonlit nights. Clay tanuki from Shigaraki, in a straw hat and with a bottle of sake, still stand outside Japanese shops for luck.
 
 ### Kyūbi 九尾の狐 · adult · sleeps 22:00–9:00 · lives 21 days
 
+<img src="../assets/yokai/kyubi.png" alt="Kyūbi" width="192">
+
 The nine-tailed fox, a thousand years old. The best known is Tamamo-no-Mae, a beauty at the court of Emperor Toba who was unmasked by a court diviner. Killed near Mount Nasu, the fox became the Sesshō-seki, the "killing stone". In 2022 the stone split in two, and newspapers reported it.
 
 ### Tengu 天狗 · adult · sleeps 22:00–9:00 · lives 18 days
+
+<img src="../assets/yokai/tengu.png" alt="Tengu" width="192">
 
 A mountain spirit dressed as a yamabushi ascetic: red face, long nose, a small black tokin cap and a feather fan. Tengu are proud and teach the arrogant a hard lesson. In legend, the tengu Sōjōbō of Mount Kurama taught swordsmanship to the young Minamoto no Yoshitsune.
 
 ### Bakeneko 化け猫 · adult · sleeps 22:00–9:00 · lives 16 days
 
+<img src="../assets/yokai/bakeneko.png" alt="Bakeneko" width="192">
+
 A cat that lives too long becomes a shape-shifter. The bakeneko walks on its hind legs, licks the oil from lamps and speaks with a human voice. In Edo-period tales cats gather at night and dance with a tenugui towel tied around their heads.
 
 ### Kappa 河童 · adult · sleeps 23:00–11:00 · lives 14 days
+
+<img src="../assets/yokai/kappa.png" alt="Kappa" width="192">
 
 A river imp the size of a child: a beak, a turtle shell, webbed hands and a dish of water on top of its head. Spill the water and it loses its strength, so you greet a kappa with a bow: a polite kappa bows back and spills it. It loves cucumbers and sumo.
 
 ### Tsuchinoko 槌の子 · adult · sleeps 22:00–9:00 · lives 10 days
 
+<img src="../assets/yokai/tsuchinoko.png" alt="Tsuchinoko" width="192">
+
 A snake fat in the middle like a tsuchi mallet, hence the name. It is said to jump several metres and to roll along with its tail in its mouth. People still "hunt" it: some Japanese towns offer a reward for a live one.
 
 ### Nuppeppo ぬっぺっぽう · adult · sleeps 22:00–10:00 · lives 9 days
 
+<img src="../assets/yokai/nuppeppo.png" alt="Nuppeppo" width="192">
+
 A lump of sagging, folded flesh with a barely visible face. It wanders abandoned temples and graveyards at night and smells of rotten meat, but harms no one. Toriyama Sekien drew it in *The Illustrated Night Parade of a Hundred Demons* (1776).
 
 ### Karakasa 唐傘お化け · secret · sleeps 23:00–10:00 · lives 20 days
+
+<img src="../assets/yokai/karakasa.png" alt="Karakasa" width="192">
 
 A tsukumogami, an object that has served for a hundred years and gained a soul. An old paper umbrella with one eye and a long tongue hops on its single leg and startles passers-by. It is one of the best known yokai, printed on Edo-period obake karuta cards and board games.
