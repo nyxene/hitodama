@@ -4,7 +4,7 @@ import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code
 import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
 import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
-import { cells, scene } from '../hooks/sprites'
+import { cells, colorOf, scene, screenRows } from '../hooks/sprites'
 import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
@@ -318,8 +318,8 @@ test('every character draws itself in every scene at 32 × 12 cells', () => {
   }
 })
 
-test('the pane draws its screen, title and care buttons, doubling the screen when it fits', async $ => {
-  for (const [surface, bodyColumns, bodyRows, lcd] of [['terminal', 40, 30, 32], ['terminal', 70, 60, 64], ['desktop', 40, 30, 0]] as const) {
+test('the pane draws its screen, title and care buttons, the screen as wide as the pane allows up to 64 columns', async $ => {
+  for (const [surface, bodyColumns, bodyRows, lcd] of [['terminal', 40, 30, 40], ['terminal', 70, 60, 64], ['desktop', 40, 30, 0]] as const) {
     const ui = await $.ui.mount({
       plugin: 'hitodama', surface, component: 'Pane', requestId: 'hitodama',
       props: { title: 'Hitodama', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows }, view: {} },
@@ -333,7 +333,44 @@ test('the pane draws its screen, title and care buttons, doubling the screen whe
 
 test('the large screen is 64 × 24 cells, two columns per pixel', () => {
   const px = scene('idle', { ch: 'kyubi' }, 0)
-  expect(cells(px, false, 2).length).toBe(Math.ceil((64 * 24 * 12) / 3) * 4)
+  expect(cells(px, false, 64).length).toBe(Math.ceil((64 * 24 * 12) / 3) * 4)
+})
+
+// A screen's cells as [glyph, foreground, background] words.
+const words = (b64: string) => new Uint32Array(Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)).buffer)
+
+test('the screen keeps its shape at any width, and at 32 and 64 columns every pixel is whole', () => {
+  expect([32, 40, 56, 64].map(screenRows)).toEqual([12, 15, 21, 24])
+  const px = scene('idle', { ch: 'kyubi' }, 0)
+  for (const cols of [32, 64]) {
+    const w = words(cells(px, false, cols)), s = cols / 32, on = 0x232820
+    for (let r = 0; r < screenRows(cols); r++) for (let c = 0; c < cols; c++) {
+      const top = px[Math.floor((2 * r) / s) * 32 + Math.floor(c / s)], bottom = px[Math.floor((2 * r + 1) / s) * 32 + Math.floor(c / s)]
+      expect([w[(r * cols + c) * 3 + 1] === on, w[(r * cols + c) * 3 + 2] === on]).toEqual([!!top, !!bottom])
+    }
+  }
+  expect(words(cells(px, false, 56)).length).toBe(56 * 21 * 3)
+})
+
+test('the yokai palette draws the pet in its colour and items in yellow on a dark screen; the LCD in two greys', () => {
+  const px = scene('eat', { ch: 'kappa' }, 0), items = scene('eat', { ch: 'kappa', hidePet: true }, 0)
+  const used = (palette: 'yokai' | 'lcd', night = false) => {
+    const w = words(cells(px, night, 32, { palette, detail: 'pixel', color: colorOf('kappa'), items }))
+    return new Set([...w].filter((_, i) => i % 3))
+  }
+  expect([...used('yokai')].sort()).toEqual([0x1b1f27, 0x62c283, 0xf2c14e].sort())
+  expect([...used('lcd')].sort()).toEqual([0x232820, 0xc4ccb2].sort())
+  expect(used('yokai', true).has(0x62c283)).toBe(false) // darker at night
+  expect([colorOf('egg'), colorOf('obake')].every(c => c > 0)).toBe(true)
+})
+
+test('braille detail draws the same screen in braille dots', () => {
+  const px = scene('idle', { ch: 'kitsune' }, 0)
+  const w = words(cells(px, false, 32, { palette: 'yokai', detail: 'braille', color: colorOf('kitsune') }))
+  expect(w.length).toBe(32 * 12 * 3)
+  const glyphs = [...w].filter((_, i) => i % 3 === 0)
+  expect(glyphs.every(g => g >= 0x2800 && g <= 0x28ff)).toBe(true)
+  expect(glyphs.some(g => g > 0x2800)).toBe(true)
 })
 
 test('a saved pet and history are told apart from damaged files', () => {
@@ -402,6 +439,46 @@ const pane = ($: Engine, surface: 'terminal' | 'desktop', bodyColumns: number, b
   plugin: 'hitodama', surface, component: 'Pane', requestId: 'hitodama',
   props: { title: 'Hitodama', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows }, view: {} },
 })
+
+// The drawn tree's elements, depth first.
+const all = (n: unknown): { type?: string; props?: Record<string, unknown>; children?: unknown }[] => {
+  if (!n || typeof n !== 'object') return []
+  const e = n as { children?: unknown }
+  return [e as never, ...[e.children].flat(9).flatMap(all)]
+}
+
+test('the pane lays itself out by its size, and the care buttons are always there', async ($, on) => {
+  await session($, on, { 'pet.json': JSON.stringify(child()) })
+  const cases: [number, number, string, number | null][] = [
+    [56, 56, 'stack', 56], // the screen as wide as the pane, everything under it as wide
+    [34, 56, 'stack', 34],
+    [90, 17, 'side', 42], // wide and short: the text beside a screen as tall as the pane allows
+    [30, 14, 'text', null], // too small for the screen: the text alone
+  ]
+  for (const [cols, rows, layout, screen] of cases) {
+    const ui = await pane($, 'terminal', cols, rows)
+    const tree = await ui.drawn()
+    const els = all(tree)
+    const lcd = els.find(e => e.type === 'Raster')
+    expect(lcd ? lcd.props!.columns : null).toBe(screen)
+    const side = els.some(e => e.type === 'Box' && e.props?.flexDirection === 'row' && all(e).some(x => x.type === 'Raster'))
+    expect(side ? 'side' : lcd ? 'stack' : 'text').toBe(layout)
+    if (layout === 'stack') expect((tree as { props: { width?: number } }).props.width).toBe(screen!)
+    for (const k of ['b-eat', 'b-snack', 'b-game', 'b-clean', 'b-heal', 'b-light', 'b-scold', 'b-stats']) expect(await ui.find({ key: k })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+for (const [palette, colored] of [['yokai', true], ['lcd', false]] as const) {
+  kitTest(colored ? "bars take the theme's colours by level in the yokai palette" : 'bars stay uncoloured in the LCD palette', { timeoutMs: 60_000, options: { palette } }, async ($, on) => {
+    await session($, on, { 'pet.json': JSON.stringify({ ...child(), joy: 0, sat: 90 }) })
+    const ui = await pane($, 'terminal', 70, 60)
+    const tones = all(await ui.drawn()).flatMap(e => (e.type === 'Text' && typeof e.props?.color === 'string' && e.props.color !== 'yellow' ? [e.props.color] : []))
+    expect(tones.includes('error')).toBe(colored) // mood 0
+    expect(tones.includes('success')).toBe(colored) // fullness 90
+    await ui.unmount()
+  })
+}
 
 test('without a five-hour limit the weekly one puts the pet to sleep at 100%, and the pane names it', async ($, on) => {
   const p = child()

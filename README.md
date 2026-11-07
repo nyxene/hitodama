@@ -10,7 +10,7 @@
   <a href="https://github.com/nyxene/hitodama/actions/workflows/gates.yml"><img alt="gates" src="https://github.com/nyxene/hitodama/actions/workflows/gates.yml/badge.svg"></a>
 </p>
 
-Every life starts as an egg on a small monochrome LCD. Five minutes later a soul flame hatches, and over about a week it grows through a child and a teen into one of six adult yokai from Japanese folklore, and one of them can turn into a secret seventh. Which one depends on how you look after it: feed it, clean up, put it to bed, answer its calls, stop its tantrums.
+Every life starts as an egg on a small pixel screen. Five minutes later a soul flame hatches, and over about a week it grows through a child and a teen into one of six adult yokai from Japanese folklore, and one of them can turn into a secret seventh. Which one depends on how you look after it: feed it, clean up, put it to bed, answer its calls, stop its tantrums.
 
 It also lives off your session. Long context weighs down its backpack, a high effort setting makes it think hard alongside the model, helpers you start wait with it by the door, night work makes it grumpy, and hitting your usage limit puts it to sleep until the reset: it makes no calls and throws no tantrums, one already open waits, nothing can kill it, and you can still feed it. `/compact` is a relief. The limit it follows is the five-hour one, or the weekly one on a plan without a five-hour limit. Its energy goes on your work: each reply costs by its length and the model, up to a cap, more with a long context or at night, and more still when you use the limit faster than its window passes (less when slower). Energy comes back in sleep, and more slowly once no window has been busy for 15 minutes. What it grows into depends only on its care mistakes and its discipline; a bad mood from your session can still make it call for you.
 
@@ -33,7 +33,7 @@ The pane opens on the next session start. `/hd` opens it any time, `/hd stats` p
 ## Requirements
 
 - Claude Code 2.1.310 or newer (the version CI tests), in a terminal. The LCD is drawn only in the terminal; other surfaces show the text and the buttons.
-- A pane at least 32 columns wide inside its frame. From 64 columns and 38 rows inside the frame the screen doubles in size.
+- A pane at least 32 columns wide inside its frame. The screen grows with the pane up to 64 columns, keeping its shape, and everything under it is as wide as the screen. In a wide and short pane the text goes beside the screen; in one too small for the screen, the pane shows the text and the buttons alone.
 
 ## Care
 
@@ -65,6 +65,8 @@ Run `/config` and find Hitodama.
 | Option | Values | Default |
 | --- | --- | --- |
 | `language` | `en` English, `ru` Русский, `zh` 中文, `ja` 日本語, `ko` 한국어, `es` Español, `pt` Português, `de` Deutsch, `fr` Français | `en` |
+| `palette` | `yokai` a dark screen, each yokai in its own colour, the bars coloured by level; `lcd` two greys, as on a pocket LCD | `yokai` |
+| `detail` | `pixel` 32 × 24 pixels; `braille` the picture smoothed and drawn in braille dots, four times as many in the same space (how they look depends on the terminal's font) | `pixel` |
 
 ## Privacy
 

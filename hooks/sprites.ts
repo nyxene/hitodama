@@ -318,22 +318,25 @@ function scale2x(g: Uint8Array, w: number, h: number): Uint8Array {
 }
 
 const DOTS = [[0x1, 0x8], [0x2, 0x10], [0x4, 0x20], [0x40, 0x80]]
-// s is the scale: the screen takes 32·s columns and 12·s rows.
-export function cells(px: Uint8Array, night: boolean, s = 1, look: ScreenLook = { palette: 'lcd', detail: 'pixel', color: 0 }): string {
+// The screen's rows for a width in columns: 32 × 12 cells hold 32 × 24 pixels, so the picture keeps its shape.
+export const screenRows = (cols: number) => Math.round((cols * 3) / 8)
+// The screen at a width of cols columns (32 to 64 and beyond). Each cell takes the pixels under it; at a width that is
+// not a whole multiple of 32, some pixels take one column more than others.
+export function cells(px: Uint8Array, night: boolean, cols = W, look: ScreenLook = { palette: 'lcd', detail: 'pixel', color: 0 }): string {
   const [bg, pet, item] = colors(look, night)
   const ink = [bg, pet, item]
   // 0 nothing, 1 the pet, 2 an item.
   const layer = Uint8Array.from(px, (v, i) => (v ? (look.items?.[i] ? 2 : 1) : 0))
-  const cols = W * s, rows = (H / 2) * s
+  const rows = screenRows(cols)
   const words = new Uint32Array(cols * rows * 3)
+  let g: Uint8Array = layer, w = W, h = H
   if (look.detail === 'braille') {
-    // 2 × 4 dots per cell: the frame is smoothed to 2·s times its size.
-    let g: Uint8Array = layer, w = W, h = H
-    for (let k = 1; k < 2 * s; k *= 2) { g = scale2x(g, w, h); w *= 2; h *= 2 }
+    // 2 × 4 dots per cell, from a frame smoothed until it has at least as many.
+    while (w < 2 * cols) { g = scale2x(g, w, h); w *= 2; h *= 2 }
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       let bits = 0, pets = 0, items = 0
       for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 2; dx++) {
-        const v = g[(4 * r + dy) * w + 2 * c + dx]
+        const v = g[Math.floor(((4 * r + dy) * h) / (4 * rows)) * w + Math.floor(((2 * c + dx) * w) / (2 * cols))]
         if (v) { bits |= DOTS[dy]![dx]!; if (v === 2) items++; else pets++ }
       }
       const i = (r * cols + c) * 3
@@ -344,10 +347,10 @@ export function cells(px: Uint8Array, night: boolean, s = 1, look: ScreenLook = 
     return base64(new Uint8Array(words.buffer))
   }
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    const i = (r * cols + c) * 3, x = Math.floor(c / s)
+    const i = (r * cols + c) * 3, x = Math.floor((c * w) / cols)
     words[i] = 0x2580
-    words[i + 1] = ink[layer[Math.floor((2 * r) / s) * W + x]!]!
-    words[i + 2] = ink[layer[Math.floor((2 * r + 1) / s) * W + x]!]!
+    words[i + 1] = ink[g[Math.floor((2 * r * h) / (2 * rows)) * w + x]!]!
+    words[i + 2] = ink[g[Math.floor(((2 * r + 1) * h) / (2 * rows)) * w + x]!]!
   }
   return base64(new Uint8Array(words.buffer))
 }

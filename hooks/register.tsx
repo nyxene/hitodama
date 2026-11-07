@@ -4,7 +4,7 @@ import type { Register } from 'claude-code'
 import type { HitodamaView } from '../types'
 import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
-import { cells, colorOf, scene, type Detail, type Palette } from './sprites'
+import { cells, colorOf, scene, screenRows, W, type Detail, type Palette } from './sprites'
 import { tuning as T } from './tuning'
 import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
@@ -12,8 +12,7 @@ const NAME = 'Hitodama'
 const PANE = 'hitodama'
 const BLANK: HitodamaView = { mode: 'care', title: NAME, call: false, room: '', msg: '', bars: [], stats: [], log: [], meta: '' }
 const view = atom({ plugin: 'hitodama', key: 'view' } as const, BLANK, { shape: 'view-2' })
-const WIDE_SCALE = 2 // a 64 × 24 cell screen when the pane has room
-const PANE_COLUMNS = 32 * WIDE_SCALE + 2
+const PANE_COLUMNS = T.screen.maxCols + 2 // the dock opens as wide as the widest screen
 
 type Press = Act | 'stats' | 'left' | 'right' | 'quit'
 const ACTIONS: [string, Press][] = [['1', 'eat'], ['2', 'snack'], ['3', 'game'], ['4', 'clean'], ['5', 'heal'], ['6', 'light'], ['7', 'scold'], ['8', 'stats']]
@@ -28,7 +27,7 @@ export const register: Register = (on, options) => {
   let game: { wins: boolean[]; dir: number } | null = null
   let statsOpen = false
   let frame = 0
-  let scale = 1 // chosen by the terminal render from the pane size; blit frames must match it
+  let screenCols = W // the screen's width, chosen by the terminal render from the pane size; blit frames must match it
   let shown = { scene: 'idle', night: false }
   let followed: Limit = { limit: 0 } // the usage limit of all live windows at the last tick, which prices this window's turns
   // File work lives in the session.start closure: $ may not be passed to functions.
@@ -57,7 +56,7 @@ export const register: Register = (on, options) => {
     // The items alone, drawn again without the pet, to colour them apart; the LCD draws all in one colour.
     const items = palette === 'lcd' ? undefined : scene(sceneId, { ...o, hidePet: true }, frame)
     const color = colorOf(sceneId === 'dead' ? 'obake' : o.ch)
-    return cells(scene(sceneId, o, frame), night, scale, { palette, detail, color, items })
+    return cells(scene(sceneId, o, frame), night, screenCols, { palette, detail, color, items })
   }
 
   function press(a: Press) {
@@ -437,14 +436,6 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const cols = e.props.bodyColumns, rows = e.props.scroll.bodyRows
     const isTerminal = e.surface === 'terminal'
-    // Double-size screen when it fits the width and leaves room for text below.
-    // Only the terminal draws the screen, so only its size sets the scale the animation frames are cut to.
-    if (isTerminal) scale = cols >= 32 * WIDE_SCALE && rows >= 12 * WIDE_SCALE + 14 ? WIDE_SCALE : 1
-    let screen = <Text dimColor>{tr().terminalOnly}</Text>
-    if (e.surface === 'terminal') {
-      const { Raster } = $.ui.resolve(e)
-      screen = <Raster key="lcd" columns={32 * scale} rows={12 * scale} cells={frameCells(shown.scene, shown.night)} />
-    }
     const L = tr().buttons
     const buttons: [string, string, Press][] =
       v.mode === 'game' ? [['1', L.left, 'left'], ['2', L.right, 'right'], ['9', L.quit, 'quit']]
@@ -477,13 +468,26 @@ export const register: Register = (on, options) => {
     const textRows = (w: number, meta = true) => lines(v.msg, w)
       + (v.mode === 'stats' ? v.stats.reduce((n, l) => n + lines(l, w), 0) : barsAt(w).length + (meta ? lines(v.meta, w) : 0))
       + buttonRows(w)
-    // The layout the pane's size allows: the screen with everything under it as wide as the screen, like the body of
-    // a pocket device, when that fits; the text beside the screen in a wide and short pane; the text alone when the
-    // screen fits neither way, without the model line if that is what keeps the buttons in.
-    const screenW = 32 * scale, screenH = isTerminal ? 12 * scale : 1, sideW = cols - screenW - 2
-    const stackW = isTerminal ? Math.min(cols, screenW) : cols
-    const layout = 1 + screenH + textRows(stackW) <= rows ? 'stack'
-      : isTerminal && sideW >= 28 && rows >= 1 + screenH ? 'side' : 'text'
+    // The layout the pane's size allows, with the screen as wide as fits, 32 to maxCols columns: on top with
+    // everything under it as wide as the screen, like the body of a pocket device; beside the text in a wide and short
+    // pane; left out when it fits neither way, the model line too if that is what keeps the buttons in.
+    let layout: 'stack' | 'side' | 'text' = isTerminal ? 'text' : 'stack', sw = W
+    if (isTerminal) {
+      for (let w = Math.min(T.screen.maxCols, cols); w >= W && layout === 'text'; w--) {
+        if (1 + screenRows(w) + textRows(w) <= rows) { layout = 'stack'; sw = w }
+      }
+      const side = Math.min(T.screen.maxCols, cols - 30, Math.floor(((rows - 1) * 8) / 3))
+      if (layout === 'text' && side >= W) { layout = 'side'; sw = side }
+      // The animation frames are cut to this width too.
+      screenCols = sw
+    }
+    const screenH = isTerminal ? screenRows(sw) : 1, sideW = cols - sw - 2
+    const stackW = isTerminal ? sw : cols
+    let screen = <Text dimColor>{tr().terminalOnly}</Text>
+    if (isTerminal) {
+      const { Raster } = $.ui.resolve(e)
+      screen = <Raster key="lcd" columns={sw} rows={screenH} cells={frameCells(shown.scene, shown.night)} />
+    }
     const textW = layout === 'side' ? sideW : layout === 'stack' ? stackW : cols
     const meta = layout !== 'text' || 1 + textRows(cols) <= rows
     const text = (
