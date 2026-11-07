@@ -252,18 +252,22 @@ export function advance(p: Pet, now: number, hourAt: (t: number) => number, rest
 export function applyEvent(p: Pet, e: Ev, t = p.at): void {
   if (p.dead || p.ch === 'egg') return
   switch (e.k) {
-    case 'turn':
-      p.en = clamp(p.en - e.cost)
+    case 'turn': {
+      // Events come from other windows' files: a number that is not one counts as 0, a name is kept short.
+      const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+      const key = (v: unknown) => String(v).slice(0, 40)
+      p.en = clamp(p.en - num(e.cost))
       p.stats.turns += 1
-      p.stats.tokens += e.tokens
-      p.stats.maxLoad = Math.max(p.stats.maxLoad, e.load)
-      p.stats.models[e.model] = (p.stats.models[e.model] ?? 0) + 1
-      p.stats.efforts[e.effort] = (p.stats.efforts[e.effort] ?? 0) + 1
+      p.stats.tokens += num(e.tokens)
+      p.stats.maxLoad = Math.max(p.stats.maxLoad, num(e.load))
+      p.stats.models[key(e.model)] = (p.stats.models[key(e.model)] ?? 0) + 1
+      p.stats.efforts[key(e.effort)] = (p.stats.efforts[key(e.effort)] ?? 0) + 1
       if (e.night ?? p.asleep) { // turns from a window that has not read the pet, or saved by an older version, carry no mark
         p.stats.nightTurns += 1
         p.joy = clamp(p.joy + T.night.joyPerTurn)
       }
       break
+    }
     case 'abort': p.joy = clamp(p.joy + T.mood.abort); break
     case 'compact': p.joy = clamp(p.joy + T.load.compactJoy); p.stats.compacts += 1; note(p, t, tr().logCompact); break
     case 'errors': p.joy = clamp(p.joy + T.mood.errorJoy); note(p, t, tr().logErrors); break

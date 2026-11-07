@@ -33,14 +33,14 @@ export function bmp(g: Grid, x0: number, y0: number, rows: string[], mirror = fa
     })
   })
 }
-export function rect(g: Grid, x: number, y: number, w: number, h: number) {
-  for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) g.set(x + i, y + j, i === 0 || j === 0 || i === w - 1 || j === h - 1 ? 1 : 0)
+export function rect(g: Grid, x: number, y: number, w: number, h: number, ink = 1) {
+  for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) g.set(x + i, y + j, i === 0 || j === 0 || i === w - 1 || j === h - 1 ? ink : 0)
 }
-export function bubble(g: Grid, x: number, y: number, w: number, h: number) {
+export function bubble(g: Grid, x: number, y: number, w: number, h: number, ink = 1) {
   for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) {
     const ci = i === 0 || i === w - 1, cj = j === 0 || j === h - 1
     if (ci && cj) continue
-    g.set(x + i, y + j, ci || cj ? 1 : 0)
+    g.set(x + i, y + j, ci || cj ? ink : 0)
   }
 }
 export const E = (cx: number, cy: number, rx: number, ry: number): Mask => (x, y) => {

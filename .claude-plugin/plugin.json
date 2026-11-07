@@ -22,8 +22,9 @@
     "language": {
       "type": "string",
       "title": "Language",
-      "description": "Interface language: en English, ru Русский, zh 中文, ja 日本語, ko 한국어, es Español, pt Português, de Deutsch, fr Français.",
+      "description": "Interface language: auto follows Claude Code's language setting (English if it is none of these); or en English, ru Русский, zh 中文, ja 日本語, ko 한국어, es Español, pt Português, de Deutsch, fr Français.",
       "options": [
+        "auto",
         "en",
         "ru",
         "zh",
@@ -34,7 +35,53 @@
         "de",
         "fr"
       ],
-      "default": "en"
+      "default": "auto"
+    },
+    "colourScreen": {
+      "type": "boolean",
+      "title": "Colour screen",
+      "description": "A dark screen with each yokai in its own colour. Off, the screen is two greys, as on a pocket LCD.",
+      "default": true
+    },
+    "colourBars": {
+      "type": "boolean",
+      "title": "Colour bars",
+      "description": "The bars under the screen coloured by level: green, yellow, red.",
+      "default": false
+    },
+    "smallPixels": {
+      "type": "boolean",
+      "title": "Small pixels",
+      "description": "On a screen wider than 32 columns, the picture smoothed to twice the pixels, each half as big.",
+      "default": true
+    },
+    "itemColours": {
+      "type": "boolean",
+      "title": "Item colours",
+      "description": "On the coloured screen, things around the pet in colours by kind: food yellow, droppings brown, sleep white, hearts pink, medicine blue, alarms red. Off, all yellow.",
+      "default": true
+    },
+    "scenery": {
+      "type": "boolean",
+      "title": "Scenery",
+      "description": "On the coloured screen, the ground under the pet, clouds by day and stars by night.",
+      "default": true
+    },
+    "particles": {
+      "type": "boolean",
+      "title": "Particles",
+      "description": "On the coloured screen, hearts rising while the pet eats or walks.",
+      "default": true
+    },
+    "detail": {
+      "type": "string",
+      "title": "Detail",
+      "description": "Screen detail: pixel, 32 × 24 pixels; braille, the picture smoothed and drawn in braille dots, four times as many in the same space.",
+      "options": [
+        "pixel",
+        "braille"
+      ],
+      "default": "pixel"
     }
   }
 }

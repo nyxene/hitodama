@@ -2,24 +2,26 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { HitodamaView } from '../types'
-import { setLang, t as tr, width } from './i18n'
+import { LANGS, langFrom, setLang, t as tr, width, type Lang } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
-import { cells, scene } from './sprites'
+import { cells, colorOf, scene, screenRows, W, type Detail } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
+import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
 const BLANK: HitodamaView = { mode: 'care', title: NAME, call: false, room: '', msg: '', bars: [], stats: [], log: [], meta: '' }
 const view = atom({ plugin: 'hitodama', key: 'view' } as const, BLANK, { shape: 'view-2' })
-const WIDE_SCALE = 2 // a 64 × 24 cell screen when the pane has room
-const PANE_COLUMNS = 32 * WIDE_SCALE + 2
+const PANE_COLUMNS = T.screen.maxCols + 2 // the dock opens as wide as the widest screen
 
 type Press = Act | 'stats' | 'left' | 'right' | 'quit'
 const ACTIONS: [string, Press][] = [['1', 'eat'], ['2', 'snack'], ['3', 'game'], ['4', 'clean'], ['5', 'heal'], ['6', 'light'], ['7', 'scold'], ['8', 'stats']]
 
 export const register: Register = (on, options) => {
-  setLang(options.language)
+  // A language set by hand wins; auto (the default) follows Claude Code's own language setting, else English.
+  const auto = !LANGS.includes(options.language as Lang)
+  setLang(auto ? 'en' : options.language)
+  const follow = (claude: unknown) => { if (auto) setLang(langFrom(claude) ?? 'en') }
   // Each window keeps itself in seen/<session>.json, so other windows see it and it survives a mod reload.
   let win: Win = { sid: '', room: '', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'medium', turn: false, agents: 0, errors: 0, limit: 0, seq: 0, events: [] }
   let pet: Pet | null = null
@@ -28,7 +30,7 @@ export const register: Register = (on, options) => {
   let game: { wins: boolean[]; dir: number } | null = null
   let statsOpen = false
   let frame = 0
-  let scale = 1 // chosen by the terminal render from the pane size; blit frames must match it
+  let screenCols = W // the screen's width, chosen by the terminal render from the pane size; blit frames must match it
   let shown = { scene: 'idle', night: false }
   let followed: Limit = { limit: 0 } // the usage limit of all live windows at the last tick, which prices this window's turns
   // File work lives in the session.start closure: $ may not be passed to functions.
@@ -48,9 +50,27 @@ export const register: Register = (on, options) => {
     win.lastActivity = now
     if (typing) win.typingAt = now
   }
+  // The look the settings ask for; anything else falls back to the default. The screen is in colour unless
+  // colourScreen is off (then an LCD); the bars only when colourBars is on.
+  const lcd = options.colourScreen === false, colourBars = options.colourBars === true
+  const detail: Detail = options.detail === 'braille' ? 'braille' : 'pixel'
+  const setting = (key: string) => options[key] !== false
+  // A render and the timer often ask for the same frame: the last one is kept and given again.
+  let lastFrame = { key: '', cells: '' }
   const frameCells = (sceneId: string, night: boolean) => {
     const g = game ? { dir: game.dir, wins: game.wins } : undefined
-    return cells(scene(sceneId, { ch: pet?.ch ?? 'egg', load: win.load, poops: pet?.poops ?? 0, agents: win.agents, game: g }, frame), night, scale)
+    const o = { ch: pet?.ch ?? 'egg', load: win.load, poops: pet?.poops ?? 0, agents: win.agents, game: g }
+    const key = JSON.stringify([sceneId, night, frame, screenCols, o])
+    if (key === lastFrame.key) return lastFrame.cells
+    const color = colorOf(sceneId === 'dead' ? 'obake' : o.ch)
+    lastFrame = {
+      key,
+      cells: cells(scene(sceneId, o, frame), night, screenCols, {
+        lcd, detail, color, fine: setting('smallPixels'), kinds: setting('itemColours'), scenery: setting('scenery'), particles: setting('particles'),
+        scene: sceneId, t: frame,
+      }),
+    }
+    return lastFrame.cells
   }
 
   function press(a: Press) {
@@ -85,6 +105,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     // A `claude -p` run or the SDK has nobody at the prompt: it must not take the pet from a window that has.
     if (!e.isInteractive) return next(e)
+    if (auto) follow((await $.config.list().catch(() => [])).find(r => r.key === 'language')?.value)
     const sid = await $.session.id()
     const cwd = e.cwd
     // No home folder, no pet: never fall back to writing into the project, as a relative path would.
@@ -96,6 +117,8 @@ export const register: Register = (on, options) => {
     }
     dir = `${home}/.claude/hitodama`
     const seenPath = (id: string) => `${dir}/seen/${id}.json`
+    // Another window's room name, as the pane shows it: a short single line, whatever its file holds.
+    const roomOf = (room: unknown) => [...String(room ?? '').slice(0, 64)].map(ch => { const c = ch.codePointAt(0)!; return c < 32 || (c >= 127 && c < 160) || (c >= 0x200b && c <= 0x200f) || c === 0x2028 || c === 0x2029 ? ' ' : ch }).join('')
     const readJson = async <V,>(path: string): Promise<V | null> => {
       try { return JSON.parse(await $.fs.read(path)) as V } catch { return null }
     }
@@ -212,7 +235,7 @@ export const register: Register = (on, options) => {
       // A window that has just closed (alive 0) no longer counts, but its last events are still applied.
       const written = (await Promise.all(recent.map(async f => ({ name: f.name, w: await readJson<Win>(`${dir}/seen/${f.name}`) }))))
         .flatMap(({ name, w }) => w && typeof w.sid === 'string' && name === `${w.sid}.json`
-          ? [{ ...w, lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
+          ? [{ ...w, room: roomOf(w.room), lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
       const others = written.filter(w => now - w.alive < T.presence.staleAfterMinutes * 60_000)
       const fresh = [win, ...others]
       followed = limitOf(fresh, now)
@@ -333,6 +356,16 @@ export const register: Register = (on, options) => {
     if (e.origin.kind !== 'clear') touch(await $.clock.now(), true)
     return next(e)
   })
+  // Claude Code's language changed in /config: an auto pet follows it at once.
+  on('config.set', async ($, e, next) => {
+    const res = await next(e)
+    if (e.key === 'language' && res.deny === undefined) {
+      follow(res.value)
+      await io?.tick()
+    }
+    return res
+  }).catch(($, e, next) => next(e))
+
   on('prompt.submit', async ($, e, next) => {
     touch(await $.clock.now())
     win.asking = 0
@@ -430,26 +463,97 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const cols = e.props.bodyColumns, rows = e.props.scroll.bodyRows
     const isTerminal = e.surface === 'terminal'
-    // Double-size screen when it fits the width and leaves room for text below.
-    // Only the terminal draws the screen, so only its size sets the scale the animation frames are cut to.
-    if (isTerminal) scale = cols >= 32 * WIDE_SCALE && rows >= 12 * WIDE_SCALE + 14 ? WIDE_SCALE : 1
-    let screen = <Text dimColor>{tr().terminalOnly}</Text>
-    if (e.surface === 'terminal') {
-      const { Raster } = $.ui.resolve(e)
-      screen = <Raster key="lcd" columns={32 * scale} rows={12 * scale} cells={frameCells(shown.scene, shown.night)} />
-    }
     const L = tr().buttons
     const buttons: [string, string, Press][] =
       v.mode === 'game' ? [['1', L.left, 'left'], ['2', L.right, 'right'], ['9', L.quit, 'quit']]
       : v.mode === 'stats' ? [['8', L.back, 'stats']]
       : ACTIONS.map(([k, a]) => [k, L[a as keyof typeof L], a])
-    // Bars in two columns on a wide pane: fullness | health, energy | discipline, mood | load.
-    const pairs = cols >= 2 * width(v.bars[0] ?? ''.padEnd(25)) + 3
-    const barRows = pairs ? [0, 1, 2].map(i => `${v.bars[i] ?? ''}   ${v.bars[i + 3] ?? ''}`) : v.bars
-    const lines = (s: string) => Math.max(1, Math.ceil(width(s) / Math.max(1, cols)))
-    const buttonsLen = buttons.reduce((n, [, l]) => n + width(l) + 4, 0)
-    const used = 1 + (isTerminal ? 12 * scale : 1) + lines(v.msg) + barRows.length + lines(v.meta) + lines(' '.repeat(buttonsLen)) + 2
+    // Bars in two columns where they fit side by side: fullness | health, energy | discipline, mood | load.
+    const barsAt = (w: number) => w >= 2 * width(v.bars[0] ?? ''.padEnd(25)) + 3
+      ? [[0, 3], [1, 4], [2, 5]] : v.bars.map((_, i) => [i])
+    // With colourBars on, the filled part of a bar takes the theme's colour for its level: low needs, or a heavy
+    // load (the last bar), warn.
+    const barEl = (i: number) => {
+      const s = v.bars[i] ?? '', a = s.search(/[█░]/), b = s.lastIndexOf('░') + 1 || s.lastIndexOf('█') + 1
+      if (!colourBars || a < 0) return s
+      const n = Number(s.slice(b).trim().split(/\s+/)[0])
+      const tone = i === 5 ? (n >= T.load.bands[2]! ? 'error' : n >= T.load.bands[1]! ? 'warning' : 'success')
+        : n < T.needs.sad ? 'error' : n < 50 ? 'warning' : 'success'
+      const filled = s.slice(a, b).replace(/░/g, '')
+      // An empty bar has nothing to colour: its number takes the colour instead.
+      if (!filled) return <Text>{s.slice(0, b)}<Text color={tone}>{s.slice(b)}</Text></Text>
+      return <Text>{s.slice(0, a)}<Text color={tone}>{filled}</Text>{s.slice(a + filled.length)}</Text>
+    }
+    // The main needs on one line, for a pane too small for the bars: "Fullness 81 · Energy 0 · Mood 0 · Health 83".
+    const compactLine = [0, 1, 2, 3].map(i => {
+      const s = v.bars[i] ?? '', a = s.search(/[█░]/)
+      return a < 0 ? s.trim() : `${s.slice(0, a).trim()} ${s.slice(a).replace(/[█░]/g, '').trim().split(/\s+/)[0]}`
+    }).join(' · ')
+    const lines = wrapRows
+    // Buttons flow in rows, one column apart, each "<key>: <label>".
+    const buttonRows = (w: number) => {
+      let rowsUsed = 1, x = 0
+      for (const [, l] of buttons) {
+        const n = width(l) + 3
+        if (x > 0 && x + 1 + n > w) { rowsUsed += 1; x = n } else x += (x > 0 ? 1 : 0) + n
+      }
+      return rowsUsed
+    }
+    const textRows = (w: number, meta = true, compact = false) => lines(v.msg, w)
+      + (v.mode === 'stats' ? v.stats.reduce((n, l) => n + lines(l, w), 0)
+        : (compact ? lines(compactLine, w) : barsAt(w).length) + (meta ? lines(v.meta, w) : 0))
+      + buttonRows(w)
+    // The layout the pane's size allows, with the screen as wide as fits, 32 to maxCols columns: on top with
+    // everything under it as wide as the screen, like the body of a pocket device; beside the text in a wide and short
+    // pane; left out when it fits neither way, the model line too if that is what keeps the buttons in.
+    let layout: 'stack' | 'side' | 'text' = isTerminal ? 'text' : 'stack', sw = W
+    if (isTerminal) {
+      for (let w = Math.min(T.screen.maxCols, cols); w >= W && layout === 'text'; w--) {
+        if (1 + screenRows(w) + textRows(w) <= rows) { layout = 'stack'; sw = w }
+      }
+      // Beside the text: the widest screen the height allows whose text, without the model line, still fits.
+      for (let w = Math.min(T.screen.maxCols, cols - 30, Math.floor(((rows - 1) * 8) / 3)); w >= W && layout === 'text'; w--) {
+        if (1 + textRows(cols - w - 2, false) <= rows) { layout = 'side'; sw = w }
+      }
+      // The animation frames are cut to this width too.
+      screenCols = sw
+    }
+    const screenH = isTerminal ? screenRows(sw) : 1, sideW = cols - sw - 2
+    const stackW = isTerminal ? sw : cols
+    let screen = <Text dimColor>{tr().terminalOnly}</Text>
+    if (isTerminal) {
+      const { Raster } = $.ui.resolve(e)
+      screen = <Raster key="lcd" columns={sw} rows={screenH} cells={frameCells(shown.scene, shown.night)} />
+    }
+    const textW = layout === 'side' ? sideW : layout === 'stack' ? stackW : cols
+    // Too small even without the model line, the text alone shows the main needs on one line instead of six bars.
+    const compact = layout === 'text' && v.mode !== 'stats' && 1 + textRows(cols, false) > rows
+    const meta = layout === 'stack' || (!compact && 1 + textRows(textW) <= rows)
+    const text = (
+      <Box flexDirection="column" width={layout === 'side' ? sideW : undefined}>
+        <Text>{v.msg}</Text>
+        {v.mode === 'stats'
+          ? v.stats.map(l => <Text>{l || ' '}</Text>)
+          : compact
+            ? <Text>{compactLine}</Text>
+            : barsAt(textW).map(g => <Text wrap="truncate-end">{g.map((i, k) => (k ? <Text>{"   "}{barEl(i)}</Text> : barEl(i)))}</Text>)}
+        {v.mode !== 'stats' && meta && <Text dimColor>{v.meta}</Text>}
+        <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+          {buttons.map(([k, l, a]) => <Button key={`b-${a}`} hotkey={k} plain label={l} onPress={() => press(a)} />)}
+        </Box>
+      </Box>
+    )
+    const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW, meta)) : (layout === 'stack' ? screenH : 0) + textRows(textW, meta, compact)) + 2
     const logRows = Math.max(0, rows - used)
+    // Journal entries wrap under their text, the time standing alone on the left; as many whole entries as fit.
+    const logW = isTerminal && layout === 'stack' ? stackW : cols, TIME = 7, textCol = Math.max(1, logW - TIME)
+    const entries: { time: string; text: string }[] = []
+    for (let i = 0, left = logRows - 1; i < v.log.length; i++) {
+      const l = v.log[i]!, text = l.slice(TIME), n = lines(text, textCol)
+      if (n > left) break
+      entries.push({ time: l.slice(0, TIME), text }); left -= n
+    }
+    // The title takes the pane's whole width; under it, a stacked terminal pane is as wide as the screen.
     return (
       <Box flexDirection="column">
         <Text wrap="truncate-end">
@@ -457,21 +561,23 @@ export const register: Register = (on, options) => {
           {v.call ? <Text color="yellow" bold> (!)</Text> : ''}
           <Text dimColor> {v.room}</Text>
         </Text>
-        {screen}
-        <Text>{v.msg}</Text>
-        {v.mode === 'stats'
-          ? v.stats.map(l => <Text>{l || ' '}</Text>)
-          : barRows.map(l => <Text wrap="truncate-end">{l}</Text>)}
-        {v.mode !== 'stats' && <Text dimColor>{v.meta}</Text>}
-        <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-          {buttons.map(([k, l, a]) => <Button key={`b-${a}`} hotkey={k} plain label={l} onPress={() => press(a)} />)}
+        <Box flexDirection="column" width={isTerminal && layout === 'stack' ? stackW : undefined}>
+          {layout === 'stack' && screen}
+          {layout === 'side'
+            ? <Box flexDirection="row" columnGap={2}>{screen}{text}</Box>
+            : text}
+          {v.mode !== 'stats' && entries.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text dimColor>{tr().journal}</Text>
+              {entries.map(e => (
+                <Box flexDirection="row">
+                  <Box width={TIME}><Text dimColor>{e.time}</Text></Box>
+                  <Box width={textCol}><Text dimColor>{e.text}</Text></Box>
+                </Box>
+              ))}
+            </Box>
+          )}
         </Box>
-        {v.mode !== 'stats' && logRows > 1 && v.log.length > 0 && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text dimColor>{tr().journal}</Text>
-            {v.log.slice(0, logRows - 1).map(l => <Text wrap="truncate-end" dimColor>{l}</Text>)}
-          </Box>
-        )}
       </Box>
     )
   })

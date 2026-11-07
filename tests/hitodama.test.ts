@@ -1,11 +1,11 @@
 import type { On } from 'claude-code'
 import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code/testing'
 
-import { LANGS, setLang, t as tr } from '../hooks/i18n'
+import { LANGS, langFrom, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
 import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
-import { cells, scene } from '../hooks/sprites'
-import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Win } from '../hooks/view'
+import { cells, colorOf, scene, screenRows, type ScreenLook } from '../hooks/sprites'
+import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
 const T0 = Date.UTC(2026, 9, 24, 12) // noon UTC
@@ -318,8 +318,8 @@ test('every character draws itself in every scene at 32 × 12 cells', () => {
   }
 })
 
-test('the pane draws its screen, title and care buttons, doubling the screen when it fits', async $ => {
-  for (const [surface, bodyColumns, bodyRows, lcd] of [['terminal', 40, 30, 32], ['terminal', 70, 60, 64], ['desktop', 40, 30, 0]] as const) {
+test('the pane draws its screen, title and care buttons, the screen as wide as the pane allows up to 64 columns', async $ => {
+  for (const [surface, bodyColumns, bodyRows, lcd] of [['terminal', 40, 30, 40], ['terminal', 70, 60, 64], ['desktop', 40, 30, 0]] as const) {
     const ui = await $.ui.mount({
       plugin: 'hitodama', surface, component: 'Pane', requestId: 'hitodama',
       props: { title: 'Hitodama', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows }, view: {} },
@@ -333,7 +333,82 @@ test('the pane draws its screen, title and care buttons, doubling the screen whe
 
 test('the large screen is 64 × 24 cells, two columns per pixel', () => {
   const px = scene('idle', { ch: 'kyubi' }, 0)
-  expect(cells(px, false, 2).length).toBe(Math.ceil((64 * 24 * 12) / 3) * 4)
+  expect(cells(px, false, 64).length).toBe(Math.ceil((64 * 24 * 12) / 3) * 4)
+})
+
+// A screen's cells as [glyph, foreground, background] words.
+const words = (b64: string) => new Uint32Array(Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)).buffer)
+
+test('the screen keeps its shape at any width, and at 32 and 64 columns every pixel is whole', () => {
+  expect([32, 40, 56, 64].map(screenRows)).toEqual([12, 15, 21, 24])
+  const px = scene('idle', { ch: 'kyubi' }, 0)
+  for (const cols of [32, 64]) {
+    const w = words(cells(px, false, cols)), s = cols / 32, on = 0x232820
+    for (let r = 0; r < screenRows(cols); r++) for (let c = 0; c < cols; c++) {
+      const top = px[Math.floor((2 * r) / s) * 32 + Math.floor(c / s)], bottom = px[Math.floor((2 * r + 1) / s) * 32 + Math.floor(c / s)]
+      expect([w[(r * cols + c) * 3 + 1] === on, w[(r * cols + c) * 3 + 2] === on]).toEqual([!!top, !!bottom])
+    }
+  }
+  expect(words(cells(px, false, 56)).length).toBe(56 * 21 * 3)
+})
+
+// The colours a screen uses.
+const colours = (id: string, ch: string, look: Partial<ScreenLook> = {}, night = false, cols = 32, t = 0) =>
+  new Set([...words(cells(scene(id, { ch }, t), night, cols, { lcd: false, detail: 'pixel', color: colorOf(ch), scene: id, t, ...look }))].filter((_, i) => i % 3))
+const FOOD = 0xf2c14e, DIRT = 0x9b6b43, ALERT = 0xff6b5a, LOVE = 0xff7aa2, GROUND = 0x2b3340, STAR = 0xc9d1e3
+
+test('the coloured screen draws the pet in its colour on a dark screen, items by kind; the LCD in two greys', () => {
+  expect([...colours('eat', 'kappa', { kinds: true })].sort()).toEqual([0x1b1f27, 0x62c283, FOOD].sort())
+  expect([...colours('eat', 'kappa', { lcd: true })].sort()).toEqual([0x232820, 0xc4ccb2].sort())
+  expect(colours('eat', 'kappa', {}, true).has(0x62c283)).toBe(false) // darker at night
+  expect(colours('dirty', 'kappa', { kinds: true }).has(DIRT)).toBe(true)
+  expect([colours('dirty', 'kappa').has(DIRT), colours('dirty', 'kappa').has(FOOD)]).toEqual([false, true]) // kinds off: all yellow
+  // An icon placed beside the pet takes its own colour, not the pet's.
+  expect(colours('call', 'kyubi', { kinds: true }, false, 32, 1).has(ALERT)).toBe(true)
+  // The egg is drawn in its own colour.
+  expect(colours('egg', 'egg', { kinds: true }).has(colorOf('egg'))).toBe(true)
+  expect(colours('egg', 'egg', { kinds: true }).has(FOOD)).toBe(false)
+})
+
+test('scenery and particles show on the coloured screen only, and small pixels only above 32 columns', () => {
+  expect(colours('idle', 'kitsune', { scenery: true }).has(GROUND)).toBe(true)
+  expect(colours('sleep', 'kitsune', { scenery: true }, true).has(STAR)).toBe(true)
+  expect(colours('idle', 'kitsune', { scenery: true, lcd: true }).has(GROUND)).toBe(false)
+  expect([...Array(8).keys()].some(t => colours('idle', 'kitsune', { particles: true }, false, 32, t).has(LOVE))).toBe(true)
+  expect(colours('sleep', 'kitsune', { particles: true }).has(LOVE)).toBe(false)
+  const px = scene('idle', { ch: 'kitsune' }, 0), look = { lcd: false, detail: 'pixel', color: colorOf('kitsune') } as const
+  expect(cells(px, false, 32, { ...look, fine: true })).toBe(cells(px, false, 32, look))
+  expect(cells(px, false, 64, { ...look, fine: true })).not.toBe(cells(px, false, 64, look))
+})
+
+test('text rows are counted as the terminal wraps them: at spaces, and at line breaks', () => {
+  expect(wrapRows('aa bbbb cc', 5)).toBe(3) // by length alone it would be 2
+  expect(wrapRows('abcdefghij', 4)).toBe(3) // a word longer than the width breaks
+  expect(wrapRows('a\nb', 10)).toBe(2)
+  expect(wrapRows('', 10)).toBe(1)
+  expect(wrapRows('あいうえお', 5)).toBe(3) // two wide characters a row at an odd width, never one split
+})
+
+test('the LCD shows no scenery or particles, and a character name from outside draws as the ghost', () => {
+  const px = scene('idle', { ch: 'kitsune' }, 1), lcd = { lcd: true, detail: 'pixel', color: 0, scene: 'idle', t: 1 } as const
+  expect(cells(px, false, 32, { ...lcd, scenery: true, particles: true })).toBe(cells(px, false, 32, lcd))
+  expect(colorOf('constructor')).toBe(colorOf('no such yokai'))
+  expect(() => scene('idle', { ch: 'constructor' }, 0)).not.toThrow()
+})
+
+test('a turn event with numbers that are not numbers costs nothing, and its names are kept short', () => {
+  const p = child(), en = p.en
+  applyEvent(p, { seq: 1, k: 'turn', cost: 'x' as never, tokens: NaN, load: Infinity, model: 'm'.repeat(500), effort: 'high' })
+  expect([p.en, p.stats.tokens, Object.keys(p.stats.models)[0]!.length]).toEqual([en, 0, 40])
+})
+
+test('braille detail draws the same screen in braille dots', () => {
+  const px = scene('idle', { ch: 'kitsune' }, 0)
+  const w = words(cells(px, false, 32, { lcd: false, detail: 'braille', color: colorOf('kitsune') }))
+  expect(w.length).toBe(32 * 12 * 3)
+  const glyphs = [...w].filter((_, i) => i % 3 === 0)
+  expect(glyphs.every(g => g >= 0x2800 && g <= 0x28ff)).toBe(true)
+  expect(glyphs.some(g => g > 0x2800)).toBe(true)
 })
 
 test('a saved pet and history are told apart from damaged files', () => {
@@ -402,6 +477,163 @@ const pane = ($: Engine, surface: 'terminal' | 'desktop', bodyColumns: number, b
   plugin: 'hitodama', surface, component: 'Pane', requestId: 'hitodama',
   props: { title: 'Hitodama', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows }, view: {} },
 })
+
+// The drawn tree's elements, depth first.
+const all = (n: unknown): { type?: string; props?: Record<string, unknown>; children?: unknown }[] => {
+  if (!n || typeof n !== 'object') return []
+  const e = n as { children?: unknown }
+  return [e as never, ...[e.children].flat(9).flatMap(all)]
+}
+
+test('the pane lays itself out by its size, and the care buttons are always there', async ($, on) => {
+  await session($, on, { 'pet.json': JSON.stringify(child()) })
+  // cols, rows, layout, the screen's width, whether the model line shows (it gives way so the buttons fit).
+  const cases: [number, number, string, number | null, boolean][] = [
+    [56, 56, 'stack', 56, true], // the screen as wide as the pane, everything under it as wide
+    [34, 56, 'stack', 34, true],
+    [90, 17, 'side', 42, true], // wide and short: the text beside a screen as tall as the pane allows
+    [64, 13, 'side', 32, false], // the dock's width, short: a smaller screen so the text beside it fits
+    [30, 12, 'text', null, false], // too small for the screen: the text alone
+  ]
+  for (const [cols, rows, layout, screen, model] of cases) {
+    const ui = await pane($, 'terminal', cols, rows)
+    const tree = await ui.drawn()
+    const els = all(tree)
+    const lcd = els.find(e => e.type === 'Raster')
+    expect(lcd ? lcd.props!.columns : null).toBe(screen)
+    const side = els.some(e => e.type === 'Box' && e.props?.flexDirection === 'row' && all(e).some(x => x.type === 'Raster'))
+    expect(side ? 'side' : lcd ? 'stack' : 'text').toBe(layout)
+    if (layout === 'stack') expect(els.find(e => e.type === 'Box' && typeof e.props?.width === 'number')?.props!.width).toBe(screen!)
+    // Too small for everything, the model line gives way so the buttons fit.
+    expect(!!(await ui.find({ type: 'Text', text: /helpers/ }))).toBe(model)
+    for (const k of ['b-eat', 'b-snack', 'b-game', 'b-clean', 'b-heal', 'b-light', 'b-scold', 'b-stats']) expect(await ui.find({ key: k })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+// The rows a drawn text column takes at its width, counted from the tree: texts wrapped, buttons flowed.
+const columnRows = (box: ReturnType<typeof all>[number], w: number) => [box.children].flat(9).reduce((n: number, c) => {
+  const e = c as ReturnType<typeof all>[number]
+  if (!e || typeof e !== 'object') return n
+  const text = all(e).flatMap(x => [x.children].flat(9).filter(s => typeof s === 'string')).join('')
+  if (e.type === 'Text') return n + (e.props?.wrap === 'truncate-end' ? 1 : wrapRows(text, w))
+  const labels = all(e).filter(x => x.type === 'Button').map(b => `${b.props!.hotkey}: ${b.props!.label}`)
+  return n + (labels.length ? wrapRows(labels.join(' '), w) : 0)
+}, 0)
+
+kitTest('beside the screen the text always fits the pane, so the buttons stay in view', { timeoutMs: 120_000, options: { language: 'de' } }, async ($, on) => {
+  await session($, on, { 'pet.json': JSON.stringify({ ...child(), tantrum: { since: T0 } }) }) // a tantrum: a long message
+  let sides = 0
+  for (let cols = 60; cols <= 90; cols += 2) for (let rows = 12; rows <= 18; rows++) {
+    const ui = await pane($, 'terminal', cols, rows)
+    const els = all(await ui.drawn())
+    const row = els.find(e => e.type === 'Box' && e.props?.flexDirection === 'row' && all(e).some(x => x.type === 'Raster'))
+    if (row) {
+      sides++
+      const text = [row.children].flat(9).find(c => (c as { type?: string })?.type === 'Box') as ReturnType<typeof all>[number]
+      expect(1 + columnRows(text, text.props!.width as number)).toBeLessThanOrEqual(rows)
+    }
+    await ui.unmount()
+  }
+  expect(sides).toBeGreaterThan(10)
+})
+
+test('a pane too small for the bars shows the main needs on one line, and every button within its rows', async ($, on) => {
+  await session($, on, { 'pet.json': JSON.stringify({ ...child(), tantrum: { since: T0 } }) })
+  for (const [cols, rows] of [[40, 10], [40, 9], [30, 9]]) {
+    const ui = await pane($, 'terminal', cols!, rows!)
+    const els = all(await ui.drawn())
+    const texts = els.filter(e => e.type === 'Text').map(e => [e.children].flat(9).filter(s => typeof s === 'string').join(''))
+    const needs = texts.find(s => s.includes(' · ') && /Fullness \d+/.test(s))
+    expect(needs).toBeDefined()
+    expect(texts.some(s => s.includes('█') || s.includes('░'))).toBe(false)
+    // Counted by hand, apart from the code's estimate: the title, the message, the needs line, the buttons.
+    const msg = texts.find(s => s.startsWith('Tantrum'))!
+    const buttons = els.filter(e => e.type === 'Button').map(b => `${b.props!.hotkey}: ${b.props!.label}`)
+    let rowsUsed = 1 + Math.ceil(msg.length / cols!) + Math.ceil(needs!.length / cols!), x = 0, brow = 1
+    for (const b of buttons) { if (x > 0 && x + 1 + b.length > cols!) { brow++; x = b.length } else x += (x ? 1 : 0) + b.length }
+    rowsUsed += brow
+    expect(rowsUsed).toBeLessThanOrEqual(rows!)
+    await ui.unmount()
+  }
+})
+
+test("a language is known by its code, its English name or its own name, as Claude Code's setting may hold it", () => {
+  expect(['Русский', 'russian', 'ru', 'Japanese (日本語)', '中文', 'Deutsch', 'English', 'Klingon', ''].map(langFrom))
+    .toEqual(['ru', 'ru', 'ru', 'ja', 'zh', 'de', 'en', null, null])
+})
+
+// The pane's title line with Claude Code's language set to `claude` and the pet's own setting `options`.
+async function titleIn($: Engine, on: On, claude: string) {
+  let language = claude
+  on('config.list', () => ({ value: [{ key: 'language', label: 'Language', kind: 'text', value: language }] }) as never)
+  on('config.set', (_, e) => { language = String(e.value); return { value: e.value } })
+  await session($, on, { 'pet.json': JSON.stringify(child()) })
+  const text = async () => {
+    const ui = await pane($, 'terminal', 70, 60)
+    const title = (await ui.drawn() as { children: unknown[] }).children[0] // the pane's first line
+    await ui.unmount()
+    return JSON.stringify(title)
+  }
+  return { text, set: (v: string) => $.config.set({ key: 'language', value: v } as never) }
+}
+const stageIn = (l: (typeof LANGS)[number]) => { setLang(l); const s = tr().stage.child; setLang('en'); return s }
+
+kitTest("by default the pet speaks Claude Code's language, and follows it when it changes", { timeoutMs: 60_000 }, async ($, on) => {
+  const s = await titleIn($, on, 'Русский')
+  expect(await s.text()).toContain(stageIn('ru'))
+  await s.set('Deutsch')
+  expect(await s.text()).toContain(stageIn('de'))
+  await s.set('Klingon')
+  expect(await s.text()).toContain(stageIn('en'))
+  setLang('en')
+})
+
+kitTest("a language set by hand wins over Claude Code's", { timeoutMs: 60_000, options: { language: 'fr' } }, async ($, on) => {
+  const s = await titleIn($, on, 'Русский')
+  expect(await s.text()).toContain(stageIn('fr'))
+  await s.set('Deutsch')
+  expect(await s.text()).toContain(stageIn('fr'))
+  setLang('en')
+})
+
+test("another window's room shows as one short line, whatever its file holds", async ($, on) => {
+  const other: Win = { ...win, sid: 's2', room: 'evil\nroom'.repeat(50), alive: T0 + HOUR, asking: T0 }
+  await session($, on, { 'pet.json': JSON.stringify(child()), 'seen/s2.json': JSON.stringify(other) })
+  const ui = await pane($, 'terminal', 70, 60)
+  const msg = all(await ui.drawn()).flatMap(e => [e.children].flat(9)).find(s => typeof s === 'string' && s.includes('evil')) as string
+  expect(msg.includes('\n')).toBe(false)
+  expect(msg.length).toBeLessThan(64 + 40)
+  await ui.unmount()
+})
+
+test('a long journal entry wraps under its text, with the time in a column of its own', async ($, on) => {
+  const long = 'Care mistake: call unanswered for 15 minutes, while the pet waited by the door.'
+  const p = { ...child(), log: [{ t: T0, text: long }] }
+  await session($, on, { 'pet.json': JSON.stringify(p) })
+  const ui = await pane($, 'terminal', 34, 56)
+  const entry = all(await ui.drawn()).find(e => e.type === 'Box' && e.props?.flexDirection === 'row' && all(e).some(x => x.type === 'Text' && JSON.stringify(x).includes(long)))
+  expect(entry).toBeDefined()
+  const [time, text] = (entry!.children as { props: { width: number } }[])
+  expect([time!.props.width, text!.props.width]).toEqual([7, 34 - 7])
+  await ui.unmount()
+})
+
+// Each setting on its own, and both at once; no options at all is the default (a coloured screen, plain bars).
+for (const options of [{}, { colourScreen: false }, { colourBars: true }, { colourScreen: false, colourBars: true }] as Record<string, boolean>[]) {
+  const lcd = options.colourScreen === false, colored = options.colourBars === true
+  kitTest(`the screen is ${lcd ? 'an LCD' : 'in colour'} and the bars ${colored ? 'coloured by level' : 'plain'} with ${JSON.stringify(options)}`, { timeoutMs: 60_000, options }, async ($, on) => {
+    await session($, on, { 'pet.json': JSON.stringify({ ...child(), joy: 0, sat: 90 }) })
+    const ui = await pane($, 'terminal', 70, 60)
+    // A colour counts only on text that shows: an empty bar colours its number.
+    const tones = all(await ui.drawn()).flatMap(e => (e.type === 'Text' && typeof e.props?.color === 'string' && e.props.color !== 'yellow' && [e.children].flat(9).join('').trim() ? [e.props.color] : []))
+    expect(tones.includes('error')).toBe(colored) // mood 0
+    expect(tones.includes('success')).toBe(colored) // fullness 90
+    const cells = all(await ui.drawn()).find(e => e.type === 'Raster')!.props!.cells as string
+    expect(new Set([...words(cells)].filter((_, i) => i % 3)).has(0xc4ccb2)).toBe(lcd)
+    await ui.unmount()
+  })
+}
 
 test('without a five-hour limit the weekly one puts the pet to sleep at 100%, and the pane names it', async ($, on) => {
   const p = child()
