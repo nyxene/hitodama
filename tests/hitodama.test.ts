@@ -58,6 +58,62 @@ test('an awake child loses mood at an adult rate, 3 an hour, and fullness and en
   expect([Math.round(p.joy), Math.round(p.sat), Math.round(p.en)]).toEqual([77, 68, 72])
 })
 
+// Lives `minutes` more minutes from p.at, in focus or not, at the given UTC hour (noon: awake).
+function live(p: Pet, minutes: number, focus: boolean, hour = 12) {
+  const t = p.at
+  for (let i = 1; i <= minutes; i++) step(p, t + i * MIN, MIN, hour, false, false, Infinity, focus)
+  p.at = t + minutes * MIN
+}
+const tenth = (x: number) => Math.round(x * 10) / 10
+
+test('in focus an awake child loses mood and fullness at half the rate, and energy as before', () => {
+  const p = child()
+  p.joy = p.sat = p.en = 80
+  live(p, 60, true)
+  expect([tenth(p.joy), tenth(p.sat), tenth(p.en)]).toEqual([78.5, 74, 72])
+})
+
+test('in focus an open call is not missed and a due tantrum waits; both count again once focus ends', () => {
+  const p = child()
+  p.joy = 10
+  p.nextTantrum = p.at
+  live(p, 1, false)
+  expect(p.call?.reason).toBe('sad')
+  p.tantrum = null
+  live(p, 30, true)
+  expect([p.cm, p.dm, p.tantrum]).toEqual([0, 0, null])
+  live(p, 16, false)
+  expect([p.cm, p.dm]).toEqual([1, 1])
+})
+
+test('an open tantrum gets its full 15 minutes again once focus ends', () => {
+  const p = child()
+  p.tantrum = { since: p.at }
+  live(p, 30, true)
+  live(p, 14, false)
+  expect([p.dm, !!p.tantrum]).toEqual([0, true])
+  live(p, 2, false)
+  expect(p.dm).toBe(1)
+})
+
+test('in focus a starving or sick pet still calls and its call is missed, and no tantrum starts', () => {
+  for (const make of [(p: Pet) => { p.sat = 0 }, (p: Pet) => { p.sick = true }]) {
+    const p = child()
+    make(p)
+    p.nextTantrum = p.at
+    live(p, 16, true)
+    expect([p.call?.missed, p.cm, p.tantrum]).toEqual([true, 1, null])
+  }
+})
+
+test('in focus a sleeping pet is as it would be without', () => {
+  const a = child(), b = child()
+  live(a, 60, true, 22)
+  live(b, 60, false, 22)
+  expect(a.asleep).toBe(true)
+  expect([a.sat, a.joy, a.cm, a.call?.reason]).toEqual([b.sat, b.joy, b.cm, b.call?.reason])
+})
+
 test('a call left unanswered for 15 minutes is one care mistake', () => {
   const p = egg()
   advance(p, T0 + 70 * MIN, utc)
@@ -149,6 +205,63 @@ test('at the five-hour limit an open call sends no notification on every tick', 
   expect(saved.at).toBeGreaterThan(T0 + 4 * 3000) // the timer ticks ran, not only the one at session start
   expect(saved.call?.reason).toBe('hungry')
   expect(notified).toBe(0)
+})
+
+// A child with fullness `sat` and a tantrum due, in a session whose window runs a turn: the pet it writes after five
+// timer ticks, and how many notifications were sent.
+async function focused($: Engine, on: On, sat: number, open: boolean, tantrum = false) {
+  const p = child()
+  p.sat = sat
+  p.nextTantrum = p.at + HOUR
+  if (open) advance(p, T0 + 3000, utc)
+  if (tantrum) p.tantrum = { since: p.at }
+  let notified = 0
+  on('ui.notify', () => { notified += 1; return { value: { isSent: true, channel: 'ghostty' } as const } })
+  // A calm pet for the tick at session start, before the turn; the one under test from the first tick in focus.
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true })
+  await s.timerTick() // the tick at session start has run by now
+  await $.turn.start({ text: '', turnId: 't1' })
+  s.files['pet.json'] = JSON.stringify(p)
+  for (let i = 0; i < 5; i++) {
+    await s.timerTick()
+    s.files['pet.json'] = s.writes['pet.json']! // each tick reads what the last one wrote
+  }
+  return { saved: JSON.parse(s.writes['pet.json'] ?? '{}') as Pet, notified }
+}
+
+test('a call held while Claude works in the pet\'s window sends no notification on every tick', async ($, on) => {
+  const { saved, notified } = await focused($, on, 10, true)
+  expect(saved.call?.reason).toBe('hungry')
+  expect(notified).toBe(0)
+})
+
+test('a tantrum held while Claude works in the pet\'s window sends no notification on every tick', async ($, on) => {
+  const { saved, notified } = await focused($, on, 80, false, true)
+  expect(saved.tantrum).not.toBeNull()
+  expect(notified).toBe(0)
+})
+
+test('a starving pet still calls while Claude works in its window, notified once', async ($, on) => {
+  const { saved, notified } = await focused($, on, 0, false)
+  expect(saved.call?.reason).toBe('hungry')
+  expect(notified).toBe(1)
+})
+
+test('a tantrum due while Claude works in the pet\'s window starts once the turn ends', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  const p = child()
+  p.nextTantrum = p.at
+  p.tantrum = null
+  // The timer ticks one at a time here; without it, ticks run on their own between the steps of the test.
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true })
+  await s.timerTick() // the tick at session start has run by now
+  await $.turn.start({ text: '', turnId: 't1' })
+  s.files['pet.json'] = JSON.stringify(p)
+  await s.timerTick()
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).tantrum).toBeNull()
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', usage: usage(1000) })
+  await s.timerTick()
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).tantrum).not.toBeNull()
 })
 
 test('medicine: a badly sick pet needs a second dose', () => {

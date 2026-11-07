@@ -51,10 +51,10 @@ export function paceOf(l: Limit, now: number): number {
 
 // When any window was last active: now while one runs a turn or helpers, else its last event (input, a turn or helper
 // starting or ending, a tool call). A turn or helpers whose end never came stop counting busyHours after that event.
-export const lastActive = (wins: Win[], now: number) => Math.max(...wins.map(w => {
-  const last = Math.max(w.lastActivity, w.lastInput)
-  return (w.turn || w.agents > 0) && now - last < T.rest.busyHours * 3_600_000 ? now : last
-}))
+export const busy = (w: Win, now: number) =>
+  (w.turn || w.agents > 0) && now - Math.max(w.lastActivity, w.lastInput) < T.rest.busyHours * 3_600_000
+export const lastActive = (wins: Win[], now: number) =>
+  Math.max(...wins.map(w => (busy(w, now) ? now : Math.max(w.lastActivity, w.lastInput))))
 
 // From when an awake pet rests: afterMinutes past the last activity (lastActive). Activity since the pet last lived
 // (livedTo: typing, a press, a running turn) counts as at that time, so the first thing done after a long gap does not

@@ -54,6 +54,8 @@ During play, 1 and 2 guess left or right and 9 quits the game.
 
 A call left unanswered for 15 minutes is a care mistake; a tantrum left alone is a discipline mistake. It falls asleep at its bedtime; asleep it calls only for the light or medicine, and hunger does not count towards starving. Mistakes decide what it grows into, and the rules are in [docs/yokai.md](docs/yokai.md), with the folklore behind each character. Starve it for 12 hours, or let an illness run, and it dies; a grown yokai also dies of old age at the end of its life span. A new egg arrives a minute later.
 
+While Claude works in the session the pet is in (a turn or helpers running, background and scheduled ones too), it keeps you company instead of asking for attention: awake, its fullness and mood fall at half the speed, no call or tantrum starts, and one already open gets its full 15 minutes again once the turn ends. A pet that is starving or sick still calls. Asleep, at the usage limit or in your pocket nothing changes. A turn or helpers whose end never came stop counting two hours after the session last did anything.
+
 While Claude Code is closed the pet is "in your pocket": its needs drop at 30% of the speed, it makes no calls (one already open gets its full 15 minutes again when you return), and nothing can kill it, so a weekend away is safe. It still ages, and a pet whose life span ran out while you were away dies once you are back. It will be hungry when you come back, and hunger counts towards starving again from then, on top of any hours it had starved before. With several sessions open, the pet stays in the one you typed in last, and the others show where it went.
 
 ## Settings

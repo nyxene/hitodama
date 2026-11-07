@@ -128,7 +128,9 @@ function scheduleTantrum(p: Pet, t: number) {
 // One time step. offline: Claude was closed, so everything is slower and there are no calls or tantrums.
 // resting: the usage limit the pet follows is hit, so until the reset there are no calls or tantrums either.
 // restFrom: from this time an awake pet gets its energy back instead of tiring (restFrom in view.ts); Infinity: never.
-export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boolean, resting = false, restFrom = Infinity): void {
+// focus: Claude works in the pet's window (busy in view.ts). Awake, outside the pocket and the limit, fullness and mood
+// fall slower and calls and tantrums wait for the turn to end, unless it is starving or sick.
+export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boolean, resting = false, restFrom = Infinity, focus = false): void {
   if (p.dead) return
   const h = dtMs / HOUR
   const st = stageOf(p)
@@ -164,9 +166,12 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
   const now = (p.asleep ? T.asleepFactor : 1) * off
   const mul = (old ? T.stageDecay.old : T.stageDecay[st]) * now
   const joyMul = (old ? T.stageDecay.old : T.joyStageDecay[st] ?? T.stageDecay[st]) * now
+  const safe = offline || resting
+  const fx = focus && !safe && !p.asleep
+  const slow = fx ? T.focus.decayFactor : 1
 
-  p.sat = clamp(p.sat - T.decayPerHour.satiety * mul * h)
-  p.joy = clamp(p.joy - T.decayPerHour.joy * joyMul * h)
+  p.sat = clamp(p.sat - T.decayPerHour.satiety * mul * slow * h)
+  p.joy = clamp(p.joy - T.decayPerHour.joy * joyMul * slow * h)
   p.en = clamp(p.asleep ? p.en + T.sleepRecoverPerHour * h
     : t - dtMs >= restFrom ? p.en + T.rest.perHour * h
     : p.en - T.decayPerHour.energy * mul * h)
@@ -180,7 +185,6 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
   }
   // In the pocket and at the limit nothing is fatal: health stops at the sickness line and hunger does not count
   // towards starving.
-  const safe = offline || resting
   const floor = safe ? Math.min(p.hp, T.needs.sick) : 0
   p.hp = Math.max(floor, clamp(p.hp - (T.poop.healthPerHourEach * p.poops + (p.sick ? T.sick.hpPerHour : 0)) * h * off))
   if (p.hp < T.needs.sick && !p.sick) {
@@ -202,15 +206,14 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
     : p.sat < T.needs.hungry ? 'hungry' : p.joy < T.needs.sad ? 'sad' : p.sick ? 'sick' : null
   if (!need) p.call = null
 
-  // In the pocket or at the limit an open call or tantrum waits, and one whose need is gone closes: its 15 minutes
-  // start again afterwards.
-  if (safe) {
-    if (p.call) p.call.since = t
-    if (p.tantrum) p.tantrum.since = t
-    return
-  }
+  // In the pocket, at the limit or in focus an open call or tantrum waits, and one whose need is gone closes: its 15
+  // minutes start again afterwards. Focus holds no call while the pet is starving or sick, so it cannot hide a death.
+  const holdCall = safe || (fx && p.sat > 0 && !p.sick)
+  if (holdCall && p.call) p.call.since = t
+  if ((safe || fx) && p.tantrum) p.tantrum.since = t
+  if (safe) return
 
-  if (need && (!p.call || p.call.reason !== need)) {
+  if (holdCall) { /* the open call waits, and none starts */ } else if (need && (!p.call || p.call.reason !== need)) {
     p.call = { reason: need, since: t, missed: false }
     note(p, t, tr().logCall(tr().callWord[need]))
   } else if (p.call && !p.call.missed && t - p.call.since >= T.attention.answerMinutes * MIN) {
@@ -219,9 +222,9 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
     note(p, t, tr().logCareMiss(T.attention.answerMinutes))
   }
 
-  // Children and teens throw tantrums; one left for 15 minutes is a discipline mistake.
+  // Children and teens throw tantrums; one left for 15 minutes is a discipline mistake. In focus none starts.
   if ((st === 'child' || st === 'teen') && !p.asleep) {
-    if (p.tantrum && t - p.tantrum.since >= T.discipline.tantrumMinutes * MIN) {
+    if (fx) { /* the open tantrum waits, and none starts */ } else if (p.tantrum && t - p.tantrum.since >= T.discipline.tantrumMinutes * MIN) {
       p.tantrum = null
       p.dm += 1
       note(p, t, tr().logDiscMiss)
@@ -234,13 +237,13 @@ export function step(p: Pet, t: number, dtMs: number, hour: number, offline: boo
 }
 
 // Catches up from p.at to now in one-minute steps. A gap longer than staleAfter means "in the pocket".
-export function advance(p: Pet, now: number, hourAt: (t: number) => number, resting = false, restFrom = Infinity): void {
+export function advance(p: Pet, now: number, hourAt: (t: number) => number, resting = false, restFrom = Infinity, focus = false): void {
   const gap = now - p.at
   const offline = gap > T.presence.staleAfterMinutes * MIN
   const from = Math.max(p.at, now - 30 * 24 * HOUR)
   for (let t = from; t < now; t += MIN) {
     const dt = Math.min(MIN, now - t)
-    step(p, t + dt, dt, hourAt(t + dt), offline, resting, restFrom)
+    step(p, t + dt, dt, hourAt(t + dt), offline, resting, restFrom, focus)
   }
   p.at = now
 }
