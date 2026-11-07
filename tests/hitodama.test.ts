@@ -48,14 +48,14 @@ test('perfect care grows a Kyūbi', () => {
   expect(p.path).toEqual(['hitodama', 'sunekosuri', 'kitsune', 'kyubi'])
 })
 
-test('an awake child loses mood at an adult rate, 3 an hour, and fullness at twice that', () => {
+test('an awake child loses mood at an adult rate, 3 an hour, and fullness and energy at twice an adult rate', () => {
   const p = egg()
   advance(p, T0 + 72 * MIN, utc)
   expect(p.ch).toBe('sunekosuri')
-  p.joy = p.sat = 80
+  p.joy = p.sat = p.en = 80
   const t = p.at
   for (let i = 1; i <= 60; i++) step(p, t + i * MIN, MIN, utc(t), false)
-  expect([Math.round(p.joy), Math.round(p.sat)]).toEqual([77, 68])
+  expect([Math.round(p.joy), Math.round(p.sat), Math.round(p.en)]).toEqual([77, 68, 72])
 })
 
 test('a call left unanswered for 15 minutes is one care mistake', () => {
