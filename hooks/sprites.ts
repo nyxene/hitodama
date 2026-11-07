@@ -1,6 +1,6 @@
 // Icons and screen scenes. A scene → Uint8Array (1 = pixel on). Characters live in their lines.
 import { bmp, bubble, E, grid, H, rect, shape, W, type CharDraw, type Grid, type Mask, type Shape } from './draw'
-import { DRAW } from './lines'
+import { CHARS, DRAW } from './lines'
 
 export { H, W }
 
@@ -103,12 +103,12 @@ function packFor(load: number) {
 }
 const WALK = [0, 1, 2, 1, 0, -1, -2, -1]
 
-export type SceneOpts = { ch: string; load?: number; poops?: number; agents?: number; game?: { dir: number; wins: boolean[] } }
+export type SceneOpts = { ch: string; hidePet?: boolean; load?: number; poops?: number; agents?: number; game?: { dir: number; wins: boolean[] } }
 
 export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
   const g = grid()
   const p: Pose = { ch: o.ch, cx: 16 + WALK[t % 8]!, gy: 19, phase: t, eyes: t % 9 === 0 ? 'closed' : 'open', mouth: 'smile', feet: true }
-  let showPet = true, load = o.load ?? 0, poops = o.poops ?? 0, agents = o.agents ?? 0, invert = false
+  let showPet = !o.hidePet, load = o.load ?? 0, poops = o.poops ?? 0, agents = o.agents ?? 0, invert = false
   let B: Bounds = { top: 8, right: 22, left: 10, cy: 12, cx: 16 }
   const before: (() => void)[] = [], after: (() => void)[] = []
   const sweat = () => { if (t % 2) bmp(g, B.right + 1, B.top, IC.drop) }
@@ -280,18 +280,74 @@ export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
   return g.a
 }
 
-// Two pixels per cell: the top one is the ▀ glyph colour, the bottom one the background.
+// How the screen is drawn. palette: lcd, two greys as on a pocket LCD; yokai, a dark screen with the pet in its own
+// colour and items (food, droppings, icons) in a warm yellow. detail: pixel, two pixels per cell (▀ and its
+// background); braille, the frame smoothed to twice the size and drawn in braille dots, one colour per cell.
+export type Palette = 'yokai' | 'lcd'
+export type Detail = 'pixel' | 'braille'
+// color: the pet's colour; items: the frame's items alone (the scene drawn with hidePet), to colour them apart.
+export type ScreenLook = { palette: Palette; detail: Detail; color: number; items?: Uint8Array }
 const LCD = { day: { bg: 0xc4ccb2, px: 0x232820 }, night: { bg: 0x8a947b, px: 0x181c14 } }
+const DARK = { day: 0x1b1f27, night: 0x0f1218 }, ITEM = 0xf2c14e
+// The egg and the ghost a dead pet becomes are not characters of a line.
+const OWN: Record<string, number> = { egg: 0xe9e2cf, obake: 0xcfd8e3 }
+export const colorOf = (ch: string) => CHARS[ch]?.color ?? OWN[ch] ?? 0xd6d9de
+
+const mix = (a: number, b: number, t: number) =>
+  [16, 8, 0].reduce((n, sh) => n | (Math.round(((a >> sh) & 255) * (1 - t) + ((b >> sh) & 255) * t) << sh), 0)
+
+// Background, pet and item colours.
+function colors(look: ScreenLook, night: boolean): [number, number, number] {
+  if (look.palette === 'lcd') { const P = night ? LCD.night : LCD.day; return [P.bg, P.px, P.px] }
+  return night ? [DARK.night, mix(look.color, DARK.night, 0.35), mix(ITEM, DARK.night, 0.35)] : [DARK.day, look.color, ITEM]
+}
+
+// Scale2x: each pixel becomes four, with corners rounded where neighbours agree.
+function scale2x(g: Uint8Array, w: number, h: number): Uint8Array {
+  const o = new Uint8Array(w * h * 4)
+  const at = (x: number, y: number) => g[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))]!
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const P = at(x, y), A = at(x, y - 1), B = at(x + 1, y), C = at(x - 1, y), D = at(x, y + 1)
+    const i = 2 * y * 2 * w + 2 * x
+    o[i] = C === A && C !== D && A !== B ? A : P
+    o[i + 1] = A === B && A !== C && B !== D ? B : P
+    o[i + 2 * w] = D === C && D !== B && C !== A ? C : P
+    o[i + 2 * w + 1] = B === D && B !== A && D !== C ? D : P
+  }
+  return o
+}
+
+const DOTS = [[0x1, 0x8], [0x2, 0x10], [0x4, 0x20], [0x40, 0x80]]
 // s is the scale: the screen takes 32·s columns and 12·s rows.
-export function cells(px: Uint8Array, night: boolean, s = 1): string {
-  const P = night ? LCD.night : LCD.day
+export function cells(px: Uint8Array, night: boolean, s = 1, look: ScreenLook = { palette: 'lcd', detail: 'pixel', color: 0 }): string {
+  const [bg, pet, item] = colors(look, night)
+  const ink = [bg, pet, item]
+  // 0 nothing, 1 the pet, 2 an item.
+  const layer = Uint8Array.from(px, (v, i) => (v ? (look.items?.[i] ? 2 : 1) : 0))
   const cols = W * s, rows = (H / 2) * s
   const words = new Uint32Array(cols * rows * 3)
+  if (look.detail === 'braille') {
+    // 2 × 4 dots per cell: the frame is smoothed to 2·s times its size.
+    let g: Uint8Array = layer, w = W, h = H
+    for (let k = 1; k < 2 * s; k *= 2) { g = scale2x(g, w, h); w *= 2; h *= 2 }
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      let bits = 0, pets = 0, items = 0
+      for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 2; dx++) {
+        const v = g[(4 * r + dy) * w + 2 * c + dx]
+        if (v) { bits |= DOTS[dy]![dx]!; if (v === 2) items++; else pets++ }
+      }
+      const i = (r * cols + c) * 3
+      words[i] = 0x2800 + bits
+      words[i + 1] = items > pets ? item : pet
+      words[i + 2] = bg
+    }
+    return base64(new Uint8Array(words.buffer))
+  }
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const i = (r * cols + c) * 3, x = Math.floor(c / s)
     words[i] = 0x2580
-    words[i + 1] = px[Math.floor((2 * r) / s) * W + x] ? P.px : P.bg
-    words[i + 2] = px[Math.floor((2 * r + 1) / s) * W + x] ? P.px : P.bg
+    words[i + 1] = ink[layer[Math.floor((2 * r) / s) * W + x]!]!
+    words[i + 2] = ink[layer[Math.floor((2 * r + 1) / s) * W + x]!]!
   }
   return base64(new Uint8Array(words.buffer))
 }

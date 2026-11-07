@@ -20,6 +20,7 @@ export type Char = {
   sleep?: [number, number] // bedtime, wake-up hour
   weight: number
   lifeDays?: number
+  color?: number // on the screen in the yokai palette, 0xRRGGBB
 }
 
 export type Line = {

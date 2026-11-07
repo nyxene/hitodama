@@ -4,7 +4,7 @@ import type { Register } from 'claude-code'
 import type { HitodamaView } from '../types'
 import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
-import { cells, scene } from './sprites'
+import { cells, colorOf, scene, type Detail, type Palette } from './sprites'
 import { tuning as T } from './tuning'
 import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
@@ -48,9 +48,16 @@ export const register: Register = (on, options) => {
     win.lastActivity = now
     if (typing) win.typingAt = now
   }
+  // The look the settings ask for; anything else falls back to the default.
+  const palette: Palette = options.palette === 'lcd' ? 'lcd' : 'yokai'
+  const detail: Detail = options.detail === 'braille' ? 'braille' : 'pixel'
   const frameCells = (sceneId: string, night: boolean) => {
     const g = game ? { dir: game.dir, wins: game.wins } : undefined
-    return cells(scene(sceneId, { ch: pet?.ch ?? 'egg', load: win.load, poops: pet?.poops ?? 0, agents: win.agents, game: g }, frame), night, scale)
+    const o = { ch: pet?.ch ?? 'egg', load: win.load, poops: pet?.poops ?? 0, agents: win.agents, game: g }
+    // The items alone, drawn again without the pet, to colour them apart; the LCD draws all in one colour.
+    const items = palette === 'lcd' ? undefined : scene(sceneId, { ...o, hidePet: true }, frame)
+    const color = colorOf(sceneId === 'dead' ? 'obake' : o.ch)
+    return cells(scene(sceneId, o, frame), night, scale, { palette, detail, color, items })
   }
 
   function press(a: Press) {
@@ -445,7 +452,18 @@ export const register: Register = (on, options) => {
       : ACTIONS.map(([k, a]) => [k, L[a as keyof typeof L], a])
     // Bars in two columns where they fit side by side: fullness | health, energy | discipline, mood | load.
     const barsAt = (w: number) => w >= 2 * width(v.bars[0] ?? ''.padEnd(25)) + 3
-      ? [0, 1, 2].map(i => `${v.bars[i] ?? ''}   ${v.bars[i + 3] ?? ''}`) : v.bars
+      ? [[0, 3], [1, 4], [2, 5]] : v.bars.map((_, i) => [i])
+    // In the yokai palette the filled part of a bar takes the theme's colour for its level: low needs, or a heavy
+    // load (the last bar), warn.
+    const barEl = (i: number) => {
+      const s = v.bars[i] ?? '', a = s.search(/[█░]/), b = s.lastIndexOf('░') + 1 || s.lastIndexOf('█') + 1
+      if (palette === 'lcd' || a < 0) return s
+      const n = Number(s.slice(b).trim().split(/\s+/)[0])
+      const tone = i === 5 ? (n >= T.load.bands[2]! ? 'error' : n >= T.load.bands[1]! ? 'warning' : 'success')
+        : n < T.needs.sad ? 'error' : n < 50 ? 'warning' : 'success'
+      const filled = s.slice(a, b).replace(/░/g, '')
+      return <Text>{s.slice(0, a)}<Text color={tone}>{filled}</Text>{s.slice(a + filled.length)}</Text>
+    }
     const lines = (s: string, w: number) => Math.max(1, Math.ceil(width(s) / Math.max(1, w)))
     // Buttons flow in rows, one column apart, each "<key>: <label>".
     const buttonRows = (w: number) => {
@@ -473,7 +491,7 @@ export const register: Register = (on, options) => {
         <Text>{v.msg}</Text>
         {v.mode === 'stats'
           ? v.stats.map(l => <Text>{l || ' '}</Text>)
-          : barsAt(textW).map(l => <Text wrap="truncate-end">{l}</Text>)}
+          : barsAt(textW).map(g => <Text wrap="truncate-end">{g.map((i, k) => (k ? <Text>{"   "}{barEl(i)}</Text> : barEl(i)))}</Text>)}
         {v.mode !== 'stats' && meta && <Text dimColor>{v.meta}</Text>}
         <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
           {buttons.map(([k, l, a]) => <Button key={`b-${a}`} hotkey={k} plain label={l} onPress={() => press(a)} />)}

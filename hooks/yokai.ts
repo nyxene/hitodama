@@ -33,17 +33,17 @@ export const yokai: Line = {
   },
   secret: { from: 'kappa', teenStartDisc: 0, onDay: 10, to: 'karakasa' },
   chars: {
-    hitodama: { name: 'Hitodama', names: { ru: 'Хитодама', ja: 'ひとだま', zh: '人魂', ko: '히토다마' }, stage: 'baby', weight: 5 }, // a soul flame
-    sunekosuri: { name: 'Sunekosuri', names: { ru: 'Сунэкосури', ja: 'すねこすり', zh: '擦脛怪', ko: '스네코스리' }, stage: 'child', sleep: [20, 9], weight: 10 }, // rubs against travellers' legs
-    kitsune: { name: 'Kitsune', names: { ru: 'Кицунэ', ja: 'きつね', zh: '狐', ko: '키츠네' }, stage: 'teen', sleep: [21, 9], weight: 15 }, // a shape-shifting fox kit
-    tanuki: { name: 'Tanuki', names: { ru: 'Тануки', ja: 'たぬき', zh: '狸', ko: '타누키' }, stage: 'teen', sleep: [21, 9], weight: 15 }, // a shape-shifter with a leaf on its head
-    kyubi: { name: 'Kyūbi', names: { ru: 'Кюби', ja: 'きゅうび', zh: '九尾狐', ko: '큐비' }, stage: 'adult', sleep: [22, 9], weight: 30, lifeDays: 21 }, // the many-tailed fox
-    tengu: { name: 'Tengu', names: { ru: 'Тэнгу', ja: 'てんぐ', zh: '天狗', ko: '텐구' }, stage: 'adult', sleep: [22, 9], weight: 30, lifeDays: 18 }, // a long-nosed mountain spirit
-    bakeneko: { name: 'Bakeneko', names: { ru: 'Бакэнэко', ja: 'ばけねこ', zh: '化猫', ko: '바케네코' }, stage: 'adult', sleep: [22, 9], weight: 20, lifeDays: 16 }, // a cat with a towel on its head
-    kappa: { name: 'Kappa', names: { ru: 'Каппа', ja: 'かっぱ', zh: '河童', ko: '갓파' }, stage: 'adult', sleep: [23, 11], weight: 25, lifeDays: 14 }, // a river imp with a dish of water on its head
-    tsuchinoko: { name: 'Tsuchinoko', names: { ru: 'Цутиноко', ja: 'ツチノコ', zh: '槌之子', ko: '츠치노코' }, stage: 'adult', sleep: [22, 9], weight: 10, lifeDays: 10 }, // a fat snake
-    nuppeppo: { name: 'Nuppeppo', names: { ru: 'Нуппэппо', ja: 'ぬっぺっぽう', zh: '肉块怪', ko: '눗페포' }, stage: 'adult', sleep: [22, 10], weight: 20, lifeDays: 9 }, // a lump of flesh
-    karakasa: { name: 'Karakasa', names: { ru: 'Каракаса', ja: 'からかさ', zh: '唐伞妖', ko: '카라카사' }, stage: 'secret', sleep: [23, 10], weight: 30, lifeDays: 20 }, // an old umbrella come alive: one eye, one leg
+    hitodama: { name: 'Hitodama', names: { ru: 'Хитодама', ja: 'ひとだま', zh: '人魂', ko: '히토다마' }, stage: 'baby', weight: 5, color: 0x8fd3ff }, // a soul flame
+    sunekosuri: { name: 'Sunekosuri', names: { ru: 'Сунэкосури', ja: 'すねこすり', zh: '擦脛怪', ko: '스네코스리' }, stage: 'child', sleep: [20, 9], weight: 10, color: 0xe0b98f }, // rubs against travellers' legs
+    kitsune: { name: 'Kitsune', names: { ru: 'Кицунэ', ja: 'きつね', zh: '狐', ko: '키츠네' }, stage: 'teen', sleep: [21, 9], weight: 15, color: 0xf08a3c }, // a shape-shifting fox kit
+    tanuki: { name: 'Tanuki', names: { ru: 'Тануки', ja: 'たぬき', zh: '狸', ko: '타누키' }, stage: 'teen', sleep: [21, 9], weight: 15, color: 0xb08a63 }, // a shape-shifter with a leaf on its head
+    kyubi: { name: 'Kyūbi', names: { ru: 'Кюби', ja: 'きゅうび', zh: '九尾狐', ko: '큐비' }, stage: 'adult', sleep: [22, 9], weight: 30, lifeDays: 21, color: 0xf6e3b4 }, // the many-tailed fox
+    tengu: { name: 'Tengu', names: { ru: 'Тэнгу', ja: 'てんぐ', zh: '天狗', ko: '텐구' }, stage: 'adult', sleep: [22, 9], weight: 30, lifeDays: 18, color: 0xe0554b }, // a long-nosed mountain spirit
+    bakeneko: { name: 'Bakeneko', names: { ru: 'Бакэнэко', ja: 'ばけねこ', zh: '化猫', ko: '바케네코' }, stage: 'adult', sleep: [22, 9], weight: 20, lifeDays: 16, color: 0xb9a3e0 }, // a cat with a towel on its head
+    kappa: { name: 'Kappa', names: { ru: 'Каппа', ja: 'かっぱ', zh: '河童', ko: '갓파' }, stage: 'adult', sleep: [23, 11], weight: 25, lifeDays: 14, color: 0x62c283 }, // a river imp with a dish of water on its head
+    tsuchinoko: { name: 'Tsuchinoko', names: { ru: 'Цутиноко', ja: 'ツチノコ', zh: '槌之子', ko: '츠치노코' }, stage: 'adult', sleep: [22, 9], weight: 10, lifeDays: 10, color: 0xcdb85e }, // a fat snake
+    nuppeppo: { name: 'Nuppeppo', names: { ru: 'Нуппэппо', ja: 'ぬっぺっぽう', zh: '肉块怪', ko: '눗페포' }, stage: 'adult', sleep: [22, 10], weight: 20, lifeDays: 9, color: 0xeab6ad }, // a lump of flesh
+    karakasa: { name: 'Karakasa', names: { ru: 'Каракаса', ja: 'からかさ', zh: '唐伞妖', ko: '카라카사' }, stage: 'secret', sleep: [23, 10], weight: 30, lifeDays: 20, color: 0x7fa7d9 }, // an old umbrella come alive: one eye, one leg
   },
   draw: {
     hitodama: (cx, gy, q, ph) => {

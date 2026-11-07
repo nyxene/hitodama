@@ -35,6 +35,26 @@
         "fr"
       ],
       "default": "en"
+    },
+    "palette": {
+      "type": "string",
+      "title": "Palette",
+      "description": "Screen colours: yokai, a dark screen with each yokai in its own colour; lcd, two greys as on a pocket LCD.",
+      "options": [
+        "yokai",
+        "lcd"
+      ],
+      "default": "yokai"
+    },
+    "detail": {
+      "type": "string",
+      "title": "Detail",
+      "description": "Screen detail: pixel, 32 × 24 pixels; braille, the picture smoothed and drawn in braille dots, four times as many in the same space.",
+      "options": [
+        "pixel",
+        "braille"
+      ],
+      "default": "pixel"
     }
   }
 }
