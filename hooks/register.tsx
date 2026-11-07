@@ -6,7 +6,7 @@ import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, colorOf, scene, screenRows, W, type Detail } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
+import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -52,14 +52,22 @@ export const register: Register = (on, options) => {
   const lcd = options.colourScreen === false, colourBars = options.colourBars === true
   const detail: Detail = options.detail === 'braille' ? 'braille' : 'pixel'
   const setting = (key: string) => options[key] !== false
+  // A render and the timer often ask for the same frame: the last one is kept and given again.
+  let lastFrame = { key: '', cells: '' }
   const frameCells = (sceneId: string, night: boolean) => {
     const g = game ? { dir: game.dir, wins: game.wins } : undefined
     const o = { ch: pet?.ch ?? 'egg', load: win.load, poops: pet?.poops ?? 0, agents: win.agents, game: g }
+    const key = JSON.stringify([sceneId, night, frame, screenCols, o])
+    if (key === lastFrame.key) return lastFrame.cells
     const color = colorOf(sceneId === 'dead' ? 'obake' : o.ch)
-    return cells(scene(sceneId, o, frame), night, screenCols, {
-      lcd, detail, color, fine: setting('smallPixels'), kinds: setting('itemColours'), scenery: setting('scenery'), particles: setting('particles'),
-      scene: sceneId, t: frame,
-    })
+    lastFrame = {
+      key,
+      cells: cells(scene(sceneId, o, frame), night, screenCols, {
+        lcd, detail, color, fine: setting('smallPixels'), kinds: setting('itemColours'), scenery: setting('scenery'), particles: setting('particles'),
+        scene: sceneId, t: frame,
+      }),
+    }
+    return lastFrame.cells
   }
 
   function press(a: Press) {
@@ -105,6 +113,8 @@ export const register: Register = (on, options) => {
     }
     dir = `${home}/.claude/hitodama`
     const seenPath = (id: string) => `${dir}/seen/${id}.json`
+    // Another window's room name, as the pane shows it: a short single line, whatever its file holds.
+    const roomOf = (room: unknown) => [...String(room ?? '').slice(0, 64)].map(ch => { const c = ch.codePointAt(0)!; return c < 32 || (c >= 127 && c < 160) || (c >= 0x200b && c <= 0x200f) || c === 0x2028 || c === 0x2029 ? ' ' : ch }).join('')
     const readJson = async <V,>(path: string): Promise<V | null> => {
       try { return JSON.parse(await $.fs.read(path)) as V } catch { return null }
     }
@@ -221,7 +231,7 @@ export const register: Register = (on, options) => {
       // A window that has just closed (alive 0) no longer counts, but its last events are still applied.
       const written = (await Promise.all(recent.map(async f => ({ name: f.name, w: await readJson<Win>(`${dir}/seen/${f.name}`) }))))
         .flatMap(({ name, w }) => w && typeof w.sid === 'string' && name === `${w.sid}.json`
-          ? [{ ...w, lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
+          ? [{ ...w, room: roomOf(w.room), lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
       const others = written.filter(w => now - w.alive < T.presence.staleAfterMinutes * 60_000)
       const fresh = [win, ...others]
       followed = limitOf(fresh, now)
@@ -458,18 +468,7 @@ export const register: Register = (on, options) => {
       const filled = s.slice(a, b).replace(/░/g, '')
       return <Text>{s.slice(0, a)}<Text color={tone}>{filled}</Text>{s.slice(a + filled.length)}</Text>
     }
-    // Rows a text takes at a width, wrapped at spaces as the terminal wraps it; a word longer than the width breaks.
-    const lines = (s: string, w: number) => {
-      w = Math.max(1, w)
-      let n = 1, x = 0
-      for (const word of s.split(' ')) {
-        const k = width(word)
-        if (x > 0 && x + 1 + k > w) { n += 1; x = 0 }
-        x += (x > 0 ? 1 : 0) + k
-        while (x > w) { n += 1; x -= w }
-      }
-      return n
-    }
+    const lines = wrapRows
     // Buttons flow in rows, one column apart, each "<key>: <label>".
     const buttonRows = (w: number) => {
       let rowsUsed = 1, x = 0
@@ -521,10 +520,10 @@ export const register: Register = (on, options) => {
     const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW)) : (layout === 'stack' ? screenH : 0) + textRows(textW, meta)) + 2
     const logRows = Math.max(0, rows - used)
     // Journal entries wrap under their text, the time standing alone on the left; as many whole entries as fit.
-    const logW = isTerminal && layout === 'stack' ? stackW : cols, TIME = 7
+    const logW = isTerminal && layout === 'stack' ? stackW : cols, TIME = 7, textCol = Math.max(1, logW - TIME)
     const entries: { time: string; text: string }[] = []
     for (let i = 0, left = logRows - 1; i < v.log.length; i++) {
-      const l = v.log[i]!, text = l.slice(TIME), n = lines(text, logW - TIME)
+      const l = v.log[i]!, text = l.slice(TIME), n = lines(text, textCol)
       if (n > left) break
       entries.push({ time: l.slice(0, TIME), text }); left -= n
     }
@@ -547,7 +546,7 @@ export const register: Register = (on, options) => {
               {entries.map(e => (
                 <Box flexDirection="row">
                   <Box width={TIME}><Text dimColor>{e.time}</Text></Box>
-                  <Box width={logW - TIME}><Text dimColor>{e.text}</Text></Box>
+                  <Box width={textCol}><Text dimColor>{e.text}</Text></Box>
                 </Box>
               ))}
             </Box>

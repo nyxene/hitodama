@@ -126,6 +126,22 @@ export function title(p: Pet, now: number): string {
   return `${nameOf(p.ch)} · ${tr().stage[stageOf(p)]} · ${age(p, now)}`
 }
 
+// Rows a text takes at a width, wrapped at spaces as the terminal wraps it: a word longer than the width breaks, and a
+// line break starts a row.
+export function wrapRows(s: string, w: number): number {
+  w = Math.max(1, w)
+  return s.split('\n').reduce((rows, line) => {
+    let n = 1, x = 0
+    for (const word of line.split(' ')) {
+      const k = width(word)
+      if (x > 0 && x + 1 + k > w) { n += 1; x = 0 }
+      x += (x > 0 ? 1 : 0) + k
+      while (x > w) { n += 1; x -= w }
+    }
+    return rows + n
+  }, 0)
+}
+
 export function bar(label: string, v: number, tag = ''): string {
   const n = Math.max(0, Math.min(10, Math.round(v / 10)))
   return `${col(label, 11)}${'█'.repeat(n)}${'░'.repeat(10 - n)} ${String(Math.round(v)).padStart(3)}${tag ? '  ' + tag : ''}`

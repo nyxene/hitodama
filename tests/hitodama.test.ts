@@ -5,7 +5,7 @@ import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
 import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
 import { cells, colorOf, scene, screenRows, type ScreenLook } from '../hooks/sprites'
-import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Win } from '../hooks/view'
+import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
 const T0 = Date.UTC(2026, 9, 24, 12) // noon UTC
@@ -381,6 +381,26 @@ test('scenery and particles show on the coloured screen only, and small pixels o
   expect(cells(px, false, 64, { ...look, fine: true })).not.toBe(cells(px, false, 64, look))
 })
 
+test('text rows are counted as the terminal wraps them: at spaces, and at line breaks', () => {
+  expect(wrapRows('aa bbbb cc', 5)).toBe(3) // by length alone it would be 2
+  expect(wrapRows('abcdefghij', 4)).toBe(3) // a word longer than the width breaks
+  expect(wrapRows('a\nb', 10)).toBe(2)
+  expect(wrapRows('', 10)).toBe(1)
+})
+
+test('the LCD shows no scenery or particles, and a character name from outside draws as the ghost', () => {
+  const px = scene('idle', { ch: 'kitsune' }, 1), lcd = { lcd: true, detail: 'pixel', color: 0, scene: 'idle', t: 1 } as const
+  expect(cells(px, false, 32, { ...lcd, scenery: true, particles: true })).toBe(cells(px, false, 32, lcd))
+  expect(colorOf('constructor')).toBe(colorOf('no such yokai'))
+  expect(() => scene('idle', { ch: 'constructor' }, 0)).not.toThrow()
+})
+
+test('a turn event with numbers that are not numbers costs nothing, and its names are kept short', () => {
+  const p = child(), en = p.en
+  applyEvent(p, { seq: 1, k: 'turn', cost: 'x' as never, tokens: NaN, load: Infinity, model: 'm'.repeat(500), effort: 'high' })
+  expect([p.en, p.stats.tokens, Object.keys(p.stats.models)[0]!.length]).toEqual([en, 0, 40])
+})
+
 test('braille detail draws the same screen in braille dots', () => {
   const px = scene('idle', { ch: 'kitsune' }, 0)
   const w = words(cells(px, false, 32, { lcd: false, detail: 'braille', color: colorOf('kitsune') }))
@@ -488,6 +508,43 @@ test('the pane lays itself out by its size, and the care buttons are always ther
     for (const k of ['b-eat', 'b-snack', 'b-game', 'b-clean', 'b-heal', 'b-light', 'b-scold', 'b-stats']) expect(await ui.find({ key: k })).toBeDefined()
     await ui.unmount()
   }
+})
+
+// The rows a drawn text column takes at its width, counted from the tree: texts wrapped, buttons flowed.
+const columnRows = (box: ReturnType<typeof all>[number], w: number) => [box.children].flat(9).reduce((n: number, c) => {
+  const e = c as ReturnType<typeof all>[number]
+  if (!e || typeof e !== 'object') return n
+  const text = all(e).flatMap(x => [x.children].flat(9).filter(s => typeof s === 'string')).join('')
+  if (e.type === 'Text') return n + (e.props?.wrap === 'truncate-end' ? 1 : wrapRows(text, w))
+  const labels = all(e).filter(x => x.type === 'Button').map(b => `${b.props!.hotkey}: ${b.props!.label}`)
+  return n + (labels.length ? wrapRows(labels.join(' '), w) : 0)
+}, 0)
+
+kitTest('beside the screen the text always fits the pane, so the buttons stay in view', { timeoutMs: 120_000, options: { language: 'de' } }, async ($, on) => {
+  await session($, on, { 'pet.json': JSON.stringify({ ...child(), tantrum: { since: T0 } }) }) // a tantrum: a long message
+  let sides = 0
+  for (let cols = 60; cols <= 90; cols += 2) for (let rows = 12; rows <= 18; rows++) {
+    const ui = await pane($, 'terminal', cols, rows)
+    const els = all(await ui.drawn())
+    const row = els.find(e => e.type === 'Box' && e.props?.flexDirection === 'row' && all(e).some(x => x.type === 'Raster'))
+    if (row) {
+      sides++
+      const text = [row.children].flat(9).find(c => (c as { type?: string })?.type === 'Box') as ReturnType<typeof all>[number]
+      expect(1 + columnRows(text, text.props!.width as number)).toBeLessThanOrEqual(rows)
+    }
+    await ui.unmount()
+  }
+  expect(sides).toBeGreaterThan(10)
+})
+
+test("another window's room shows as one short line, whatever its file holds", async ($, on) => {
+  const other: Win = { ...win, sid: 's2', room: 'evil\nroom'.repeat(50), alive: T0 + HOUR, asking: T0 }
+  await session($, on, { 'pet.json': JSON.stringify(child()), 'seen/s2.json': JSON.stringify(other) })
+  const ui = await pane($, 'terminal', 70, 60)
+  const msg = all(await ui.drawn()).flatMap(e => [e.children].flat(9)).find(s => typeof s === 'string' && s.includes('evil')) as string
+  expect(msg.includes('\n')).toBe(false)
+  expect(msg.length).toBeLessThan(64 + 40)
+  await ui.unmount()
 })
 
 test('a long journal entry wraps under its text, with the time in a column of its own', async ($, on) => {

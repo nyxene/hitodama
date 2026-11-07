@@ -79,7 +79,7 @@ function mouth(g: Grid, cx: number, m: NonNullable<Shape['mouth']>, o: Pose) {
   bmp(g, cx - rows[0]!.length / 2 + dx, m.y + dy, rows, false, m.ink === 0 ? 0 : 1)
 }
 function drawPet(g: Grid, o: Pose): Bounds {
-  const cx = Math.round(o.cx), C = (CH[o.ch] ?? CH.obake!)(cx, Math.round(o.gy), o.sq ?? 0, o.phase)
+  const cx = Math.round(o.cx), C = ((Object.hasOwn(CH, o.ch) ? CH[o.ch] : undefined) ?? CH.obake!)(cx, Math.round(o.gy), o.sq ?? 0, o.phase)
   if (o.pack) {
     const { w, h } = o.pack, px = Math.round(C.left - w + 3), py = Math.round(C.cy - h / 2 + 1)
     rect(g, px, py, w, h)
@@ -307,7 +307,7 @@ const S = { ground: 8, dots: 9, star: 10, dim: 11, cloud: 12, spark: 13, heart: 
 const SCENERY = { day: [0x2b3340, 0x252c37, 0, 0, 0x2f3847, 0xfff4c2, 0xff7aa2], night: [0x1c2230, 0x171c27, 0xc9d1e3, 0x59617a, 0, 0xfff4c2, 0xb75b77] }
 // The egg and the ghost a dead pet becomes are not characters of a line.
 const OWN: Record<string, number> = { egg: 0xe9e2cf, obake: 0xcfd8e3 }
-export const colorOf = (ch: string) => CHARS[ch]?.color ?? OWN[ch] ?? 0xd6d9de
+export const colorOf = (ch: string) => (Object.hasOwn(CHARS, ch) ? CHARS[ch]?.color : undefined) ?? (Object.hasOwn(OWN, ch) ? OWN[ch] : undefined) ?? 0xd6d9de
 
 const mix = (a: number, b: number, t: number) =>
   [16, 8, 0].reduce((n, sh) => n | (Math.round(((a >> sh) & 255) * (1 - t) + ((b >> sh) & 255) * t) << sh), 0)
@@ -377,13 +377,12 @@ export function cells(px: Uint8Array, night: boolean, cols = W, look: ScreenLook
   if (look.detail === 'braille') {
     // 2 × 4 dots per cell, in the colour most of them have.
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-      let bits = 0
-      const count = new Map<number, number>()
+      let bits = 0, top: number = K.pet, best = 0
+      COUNT.fill(0)
       for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 2; dx++) {
         const v = g[Math.floor(((4 * r + dy) * h) / (4 * rows)) * w + Math.floor(((2 * c + dx) * w) / (2 * cols))]!
-        if (v) { bits |= DOTS[dy]![dx]!; count.set(v, (count.get(v) ?? 0) + 1) }
+        if (v) { bits |= DOTS[dy]![dx]!; if (++COUNT[v]! > best) { best = COUNT[v]!; top = v } }
       }
-      const top = [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? K.pet
       const i = (r * cols + c) * 3
       words[i] = 0x2800 + bits
       words[i + 1] = ink[top]!
@@ -400,12 +399,14 @@ export function cells(px: Uint8Array, night: boolean, cols = W, look: ScreenLook
   return base64(new Uint8Array(words.buffer))
 }
 
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+const COUNT = new Uint8Array(16)
+const B64 = new TextEncoder().encode('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'), ASCII = new TextDecoder()
+// The input is always whole Uint32 words times 3, so a multiple of 3 bytes: no padding.
 function base64(b: Uint8Array): string {
-  let s = ''
-  for (let i = 0; i < b.length; i += 3) {
-    const n = (b[i]! << 16) | ((b[i + 1] ?? 0) << 8) | (b[i + 2] ?? 0)
-    s += B64[(n >> 18) & 63]! + B64[(n >> 12) & 63]! + (i + 1 < b.length ? B64[(n >> 6) & 63]! : '=') + (i + 2 < b.length ? B64[n & 63]! : '=')
+  const o = new Uint8Array((b.length / 3) * 4)
+  for (let i = 0, j = 0; i < b.length; i += 3, j += 4) {
+    const n = (b[i]! << 16) | (b[i + 1]! << 8) | b[i + 2]!
+    o[j] = B64[n >> 18]!; o[j + 1] = B64[(n >> 12) & 63]!; o[j + 2] = B64[(n >> 6) & 63]!; o[j + 3] = B64[n & 63]!
   }
-  return s
+  return ASCII.decode(o)
 }
