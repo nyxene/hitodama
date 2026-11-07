@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/nyxene/hitodama/compare/v0.4.0...v0.5.0) (2026-11-07)
+
+
+### Added
+
+* the pane fits its size, yokai come in colour, and the pet speaks Claude Code's language ([#46](https://github.com/nyxene/hitodama/issues/46)) ([b58aede](https://github.com/nyxene/hitodama/commit/b58aede42964f76d6a90d5242685271cbe74259c))
+
 ## [0.4.0](https://github.com/nyxene/hitodama/compare/v0.3.2...v0.4.0) (2026-11-07)
 
 
