@@ -10,12 +10,14 @@ export type Win = {
   // The usage limit the pet follows: the five-hour one when Claude Code reports it, else the weekly one.
   limit: number; limitKind?: LimitKind; limitResetsAt?: string; limitAt?: number
   seq: number; events: Ev[]
+  asking?: number // when Claude Code showed a permission prompt in this window; 0 or absent: none showing
 }
 export type LimitKind = 'five_hour' | 'seven_day'
 export type Limit = { limit: number; limitKind?: LimitKind; limitResetsAt?: string }
 export type Ctx = Limit & {
   now: number; isOwner: boolean; ownerRoom: string
   idleMin: number; anim?: { id: string; until: number; msg: string } | null
+  asking?: string[] // the rooms of other live windows where Claude waits for permission
 }
 
 const EFF: Record<string, string> = { low: 'think_low', medium: 'think_med', high: 'think_high', xhigh: 'think_high', max: 'think_max' }
@@ -71,6 +73,7 @@ function left(ms: number) {
 export function decide(p: Pet, w: Win, c: Ctx): { scene: string; msg: string } {
   const n = nameOf(p.ch)
   if (p.dead) return { scene: 'dead', msg: tr().dead(n, causeText(p.dead.cause), p.ageDays) }
+  if (c.asking?.length) return { scene: 'call', msg: tr().asking(c.asking.join(', ')) }
   if (!c.isOwner) return { scene: 'away', msg: tr().away(n, c.ownerRoom) }
   if (p.ch === 'egg') return { scene: 'egg', msg: tr().eggWait(left(p.bornAt + lineOf(p.line).hatchMinutes * 60_000 - c.now)) }
   if (c.now - p.evolvedAt < 6000) {

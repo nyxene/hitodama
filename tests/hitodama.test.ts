@@ -604,6 +604,82 @@ test('a turn counts as made at night by when it was made, not when it is applied
   expect([older.joy, older.stats.nightTurns]).toEqual([49, 1]) // an older event with no mark: as before
 })
 
+test('another window asking for permission comes before everything but death, in every pane', () => {
+  const p = child()
+  p.sick = true
+  for (const over of [{}, { isOwner: false }]) {
+    const d = decide(p, { ...win, turn: true }, ctx(p.at, { ...over, asking: ['astro'] }))
+    expect([d.scene, d.msg]).toEqual(['call', tr().asking('astro')])
+  }
+  p.dead = { at: p.at, cause: 'sick' }
+  expect(decide(p, win, ctx(p.at, { asking: ['astro'] })).scene).toBe('dead')
+})
+
+// The window file a session writes on its next tick.
+const seen = async (s: { hd: () => Promise<unknown>; writes: Record<string, string> }) => {
+  await s.hd()
+  return JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win
+}
+
+test('a permission prompt marks the window until the tool call ends; other notices do not', async ($, on) => {
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  on('classic.Notification', () => ({}))
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await $.classic.Notification({ notification_type: 'idle_prompt', message: 'waiting' })
+  expect((await seen(s)).asking ?? 0).toBe(0)
+  await $.classic.Notification({ notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
+  const marked = await seen(s)
+  expect(marked.asking).toBeGreaterThan(0)
+  expect(JSON.stringify(marked)).not.toContain('Bash') // only that a prompt showed is kept
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'u1', command: 'true' } as never)
+  expect((await seen(s)).asking).toBe(0)
+})
+
+test('an interrupted turn leaves no permission mark', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }))
+  on('classic.Notification', () => ({}))
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await $.turn.start({ text: '', turnId: 't1' })
+  await $.classic.Notification({ notification_type: 'permission_prompt', message: '' })
+  expect((await seen(s)).asking).toBeGreaterThan(0)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't1', reason: 'answer' })
+  expect((await seen(s)).asking).toBe(0)
+})
+
+test('a resumed session forgets a permission prompt its old process left open', async ($, on) => {
+  const kept: Win = { ...win, sid: 's1', asking: T0 }
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()), 'seen/s1.json': JSON.stringify(kept) })
+  expect((await seen(s)).asking).toBe(0)
+})
+
+test('the window showing the prompt does not point at itself', async ($, on) => {
+  on('classic.Notification', () => ({}))
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await $.classic.Notification({ notification_type: 'permission_prompt', message: '' })
+  expect((await seen(s)).asking).toBeGreaterThan(0)
+  const ui = await $.ui.mount({
+    plugin: 'hitodama', surface: 'terminal', component: 'Pane', requestId: 'hitodama',
+    props: { title: 'Hitodama', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+  })
+  expect(await ui.find({ type: 'Text', text: /asked for your OK/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Sunekosuri/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the pane names the other window where Claude asked for permission, once per room', async ($, on) => {
+  const other = (sid: string): Win => ({ ...win, sid, room: 'astro', alive: T0 + HOUR, asking: T0 })
+  const s = await session($, on, {
+    'pet.json': JSON.stringify(child()), 'seen/s2.json': JSON.stringify(other('s2')), 'seen/s3.json': JSON.stringify(other('s3')),
+  })
+  await s.hd()
+  const ui = await $.ui.mount({
+    plugin: 'hitodama', surface: 'terminal', component: 'Pane', requestId: 'hitodama',
+    props: { title: 'Hitodama', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
+  })
+  expect((await ui.find({ type: 'Text', text: /astro/ }))?.text).toContain(tr().asking('astro'))
+  await ui.unmount()
+})
+
 test('the pane shows the pet the session has read', async ($, on) => {
   const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
   await s.hd()

@@ -157,16 +157,17 @@ export const register: Register = (on, options) => {
     let roomCheckedAt = 0
     let busy = Promise.resolve()
 
-    // active: when any window was last active, as the tick found it.
-    const refresh = async (now: number, isOwner: boolean, ownerRoom: string, active: number) => {
+    // active: when any window was last active, as the tick found it. asking: the rooms of other windows where Claude
+    // waits for permission.
+    const refresh = async (now: number, isOwner: boolean, ownerRoom: string, active: number, asking: string[] = []) => {
       const p = pet
       if (!p) return
       const limit = followed
       const ctx: Ctx = {
-        ...limit, now, isOwner, ownerRoom, anim,
+        ...limit, now, isOwner, ownerRoom, anim, asking,
         idleMin: (now - active) / 60_000,
       }
-      const d = game && isOwner ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
+      const d = game && isOwner && !asking.length ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
       const night = p.asleep && isOwner
       shown = { scene: d.scene, night }
       const hhmm = (t: number) => {
@@ -268,7 +269,8 @@ export const register: Register = (on, options) => {
       } else pet = p
 
       win.events = win.events.filter(ev => ev.seq > (pet!.applied[sid] ?? 0))
-      await refresh(now, isOwner, owner.room, active)
+      // The window showing the prompt has it on screen; the others point at it.
+      await refresh(now, isOwner, owner.room, active, [...new Set(others.filter(w => (w.asking ?? 0) > 0).map(w => w.room))])
     }
     // Timer ticks and presses run one at a time so files are never read and written in a race.
     // A tick can fail once in passing (a file read while another window writes it); three in a row are said once.
@@ -285,7 +287,7 @@ export const register: Register = (on, options) => {
     const saved = await readPet().catch(() => undefined)
     const known = saved === undefined || saved?.applied[sid] !== undefined
     // A resumed session's turn and helpers died with its old process, and their ends never come.
-    win = { ...win, ...kept, sid, turn: false, agents: 0, ...(known ? {} : { events: [] }) }
+    win = { ...win, ...kept, sid, turn: false, agents: 0, asking: 0, ...(known ? {} : { events: [] }) }
     // A window file cut short reads as none and would number events from 0, below what the pet has already applied,
     // so they would be dropped: numbering goes on from there.
     win.seq = Math.max(win.seq, saved?.applied[sid] ?? 0)
@@ -333,6 +335,17 @@ export const register: Register = (on, options) => {
   })
   on('prompt.submit', async ($, e, next) => {
     touch(await $.clock.now())
+    win.asking = 0
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // Claude Code says when it shows a permission prompt; only that it does is kept, not the tool or the text. The mark
+  // goes once a tool call ends (the one that asked, allowed or refused), the turn ends, or a prompt is submitted.
+  // ponytail: no event marks the moment you allow a call, so the mark stays while an allowed tool runs (the pane says
+  // Claude *asked*); and any other tool call ending, in parallel or in a helper, clears it while the prompt may still
+  // be open. Match tool_use_id through tool.check's ask if that matters.
+  on('classic.Notification', async ($, e, next) => {
+    if (e.notification_type === 'permission_prompt') win.asking = await $.clock.now()
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -341,7 +354,10 @@ export const register: Register = (on, options) => {
     if (e.agentId) {
       win.agents += 1
       push({ k: 'agent' })
-    } else win.turn = true
+    } else {
+      win.turn = true
+      win.asking = 0
+    }
     return next(e)
   })
   on('turn.step', async function* ($, e, next) {
@@ -358,7 +374,10 @@ export const register: Register = (on, options) => {
       res = await next(e)
     } finally {
       if (e.agentId) win.agents = Math.max(0, win.agents - 1)
-      else win.turn = false
+      else {
+        win.turn = false
+        win.asking = 0
+      }
       win.lastActivity = await $.clock.now()
     }
     if (e.agentId) return res
@@ -375,6 +394,7 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     const res = await next(e)
+    win.asking = 0 // its permission, if it asked, is settled
     win.lastActivity = await $.clock.now() // a long turn shows it is still working
     if (!e.agentId && res.deny === undefined) {
       win.errors = res.isError ? win.errors + 1 : 0
