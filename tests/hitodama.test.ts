@@ -48,6 +48,16 @@ test('perfect care grows a Kyūbi', () => {
   expect(p.path).toEqual(['hitodama', 'sunekosuri', 'kitsune', 'kyubi'])
 })
 
+test('an awake child loses mood at an adult rate, 3 an hour, and fullness at twice that', () => {
+  const p = egg()
+  advance(p, T0 + 72 * MIN, utc)
+  expect(p.ch).toBe('sunekosuri')
+  p.joy = p.sat = 80
+  const t = p.at
+  for (let i = 1; i <= 60; i++) step(p, t + i * MIN, MIN, utc(t), false)
+  expect([Math.round(p.joy), Math.round(p.sat)]).toEqual([77, 68])
+})
+
 test('a call left unanswered for 15 minutes is one care mistake', () => {
   const p = egg()
   advance(p, T0 + 70 * MIN, utc)
