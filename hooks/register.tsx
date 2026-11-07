@@ -4,7 +4,7 @@ import type { Register } from 'claude-code'
 import type { HitodamaView } from '../types'
 import { setLang, t as tr, width } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
-import { cells, colorOf, scene, screenRows, W, type Detail, type Palette } from './sprites'
+import { cells, colorOf, scene, screenRows, W, type Detail } from './sprites'
 import { tuning as T } from './tuning'
 import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
@@ -47,16 +47,20 @@ export const register: Register = (on, options) => {
     win.lastActivity = now
     if (typing) win.typingAt = now
   }
-  // The look the settings ask for; anything else falls back to the default.
-  const palette: Palette = options.palette === 'lcd' ? 'lcd' : 'yokai'
+  // The look the settings ask for; anything else falls back to the default. colour: screen, the screen in colour
+  // (default); all, the bars too; text, the bars only, the screen as an LCD; none, the LCD and plain bars.
+  const colour = (['screen', 'all', 'text', 'none'] as const).find(c => c === options.colour) ?? 'screen'
+  const lcd = colour === 'text' || colour === 'none', colourBars = colour === 'all' || colour === 'text'
   const detail: Detail = options.detail === 'braille' ? 'braille' : 'pixel'
+  const setting = (key: string) => options[key] !== false
   const frameCells = (sceneId: string, night: boolean) => {
     const g = game ? { dir: game.dir, wins: game.wins } : undefined
     const o = { ch: pet?.ch ?? 'egg', load: win.load, poops: pet?.poops ?? 0, agents: win.agents, game: g }
-    // The items alone, drawn again without the pet, to colour them apart; the LCD draws all in one colour.
-    const items = palette === 'lcd' ? undefined : scene(sceneId, { ...o, hidePet: true }, frame)
     const color = colorOf(sceneId === 'dead' ? 'obake' : o.ch)
-    return cells(scene(sceneId, o, frame), night, screenCols, { palette, detail, color, items })
+    return cells(scene(sceneId, o, frame), night, screenCols, {
+      lcd, detail, color, fine: setting('smallPixels'), kinds: setting('itemColours'), scenery: setting('scenery'), particles: setting('particles'),
+      scene: sceneId, t: frame,
+    })
   }
 
   function press(a: Press) {
@@ -444,11 +448,11 @@ export const register: Register = (on, options) => {
     // Bars in two columns where they fit side by side: fullness | health, energy | discipline, mood | load.
     const barsAt = (w: number) => w >= 2 * width(v.bars[0] ?? ''.padEnd(25)) + 3
       ? [[0, 3], [1, 4], [2, 5]] : v.bars.map((_, i) => [i])
-    // In the yokai palette the filled part of a bar takes the theme's colour for its level: low needs, or a heavy
+    // With colour all or text, the filled part of a bar takes the theme's colour for its level: low needs, or a heavy
     // load (the last bar), warn.
     const barEl = (i: number) => {
       const s = v.bars[i] ?? '', a = s.search(/[█░]/), b = s.lastIndexOf('░') + 1 || s.lastIndexOf('█') + 1
-      if (palette === 'lcd' || a < 0) return s
+      if (!colourBars || a < 0) return s
       const n = Number(s.slice(b).trim().split(/\s+/)[0])
       const tone = i === 5 ? (n >= T.load.bands[2]! ? 'error' : n >= T.load.bands[1]! ? 'warning' : 'success')
         : n < T.needs.sad ? 'error' : n < 50 ? 'warning' : 'success'
@@ -476,8 +480,10 @@ export const register: Register = (on, options) => {
       for (let w = Math.min(T.screen.maxCols, cols); w >= W && layout === 'text'; w--) {
         if (1 + screenRows(w) + textRows(w) <= rows) { layout = 'stack'; sw = w }
       }
-      const side = Math.min(T.screen.maxCols, cols - 30, Math.floor(((rows - 1) * 8) / 3))
-      if (layout === 'text' && side >= W) { layout = 'side'; sw = side }
+      // Beside the text: the widest screen the height allows whose text, without the model line, still fits.
+      for (let w = Math.min(T.screen.maxCols, cols - 30, Math.floor(((rows - 1) * 8) / 3)); w >= W && layout === 'text'; w--) {
+        if (1 + textRows(cols - w - 2, false) <= rows) { layout = 'side'; sw = w }
+      }
       // The animation frames are cut to this width too.
       screenCols = sw
     }
@@ -489,7 +495,7 @@ export const register: Register = (on, options) => {
       screen = <Raster key="lcd" columns={sw} rows={screenH} cells={frameCells(shown.scene, shown.night)} />
     }
     const textW = layout === 'side' ? sideW : layout === 'stack' ? stackW : cols
-    const meta = layout !== 'text' || 1 + textRows(cols) <= rows
+    const meta = layout === 'stack' || 1 + textRows(textW) <= rows
     const text = (
       <Box flexDirection="column" width={layout === 'side' ? sideW : undefined}>
         <Text>{v.msg}</Text>
@@ -504,23 +510,26 @@ export const register: Register = (on, options) => {
     )
     const used = 1 + (layout === 'side' ? Math.max(screenH, textRows(sideW)) : (layout === 'stack' ? screenH : 0) + textRows(textW, meta)) + 2
     const logRows = Math.max(0, rows - used)
+    // The title takes the pane's whole width; under it, a stacked terminal pane is as wide as the screen.
     return (
-      <Box flexDirection="column" width={layout === 'stack' ? stackW : undefined}>
+      <Box flexDirection="column">
         <Text wrap="truncate-end">
           <Text bold>{v.title}</Text>
           {v.call ? <Text color="yellow" bold> (!)</Text> : ''}
           <Text dimColor> {v.room}</Text>
         </Text>
-        {layout === 'stack' && screen}
-        {layout === 'side'
-          ? <Box flexDirection="row" columnGap={2}>{screen}{text}</Box>
-          : text}
-        {v.mode !== 'stats' && logRows > 1 && v.log.length > 0 && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text dimColor>{tr().journal}</Text>
-            {v.log.slice(0, logRows - 1).map(l => <Text wrap="truncate-end" dimColor>{l}</Text>)}
-          </Box>
-        )}
+        <Box flexDirection="column" width={isTerminal && layout === 'stack' ? stackW : undefined}>
+          {layout === 'stack' && screen}
+          {layout === 'side'
+            ? <Box flexDirection="row" columnGap={2}>{screen}{text}</Box>
+            : text}
+          {v.mode !== 'stats' && logRows > 1 && v.log.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text dimColor>{tr().journal}</Text>
+              {v.log.slice(0, logRows - 1).map(l => <Text wrap="truncate-end" dimColor>{l}</Text>)}
+            </Box>
+          )}
+        </Box>
       </Box>
     )
   })

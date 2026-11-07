@@ -36,15 +36,41 @@
       ],
       "default": "en"
     },
-    "palette": {
+    "colour": {
       "type": "string",
-      "title": "Palette",
-      "description": "Screen colours: yokai, a dark screen with each yokai in its own colour; lcd, two greys as on a pocket LCD.",
+      "title": "Colour",
+      "description": "What is in colour: screen, the screen (a dark screen, each yokai in its own colour); all, the screen and the bars; text, the bars only, the screen as a two-grey LCD; none, the LCD and plain bars.",
       "options": [
-        "yokai",
-        "lcd"
+        "screen",
+        "all",
+        "text",
+        "none"
       ],
-      "default": "yokai"
+      "default": "screen"
+    },
+    "smallPixels": {
+      "type": "boolean",
+      "title": "Small pixels",
+      "description": "On a screen wider than 32 columns, the picture smoothed to twice the pixels, each half as big.",
+      "default": true
+    },
+    "itemColours": {
+      "type": "boolean",
+      "title": "Item colours",
+      "description": "On the coloured screen, things around the pet in colours by kind: food yellow, droppings brown, sleep white, hearts pink, medicine blue, alarms red. Off, all yellow.",
+      "default": true
+    },
+    "scenery": {
+      "type": "boolean",
+      "title": "Scenery",
+      "description": "On the coloured screen, the ground under the pet, clouds by day and stars by night.",
+      "default": true
+    },
+    "particles": {
+      "type": "boolean",
+      "title": "Particles",
+      "description": "On the coloured screen, hearts rising while the pet eats or walks.",
+      "default": true
     },
     "detail": {
       "type": "string",

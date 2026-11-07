@@ -4,7 +4,7 @@ import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code
 import { LANGS, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
 import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
-import { cells, colorOf, scene, screenRows } from '../hooks/sprites'
+import { cells, colorOf, scene, screenRows, type ScreenLook } from '../hooks/sprites'
 import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
@@ -352,21 +352,38 @@ test('the screen keeps its shape at any width, and at 32 and 64 columns every pi
   expect(words(cells(px, false, 56)).length).toBe(56 * 21 * 3)
 })
 
-test('the yokai palette draws the pet in its colour and items in yellow on a dark screen; the LCD in two greys', () => {
-  const px = scene('eat', { ch: 'kappa' }, 0), items = scene('eat', { ch: 'kappa', hidePet: true }, 0)
-  const used = (palette: 'yokai' | 'lcd', night = false) => {
-    const w = words(cells(px, night, 32, { palette, detail: 'pixel', color: colorOf('kappa'), items }))
-    return new Set([...w].filter((_, i) => i % 3))
-  }
-  expect([...used('yokai')].sort()).toEqual([0x1b1f27, 0x62c283, 0xf2c14e].sort())
-  expect([...used('lcd')].sort()).toEqual([0x232820, 0xc4ccb2].sort())
-  expect(used('yokai', true).has(0x62c283)).toBe(false) // darker at night
-  expect([colorOf('egg'), colorOf('obake')].every(c => c > 0)).toBe(true)
+// The colours a screen uses.
+const colours = (id: string, ch: string, look: Partial<ScreenLook> = {}, night = false, cols = 32, t = 0) =>
+  new Set([...words(cells(scene(id, { ch }, t), night, cols, { lcd: false, detail: 'pixel', color: colorOf(ch), scene: id, t, ...look }))].filter((_, i) => i % 3))
+const FOOD = 0xf2c14e, DIRT = 0x9b6b43, ALERT = 0xff6b5a, LOVE = 0xff7aa2, GROUND = 0x2b3340, STAR = 0xc9d1e3
+
+test('the coloured screen draws the pet in its colour on a dark screen, items by kind; the LCD in two greys', () => {
+  expect([...colours('eat', 'kappa', { kinds: true })].sort()).toEqual([0x1b1f27, 0x62c283, FOOD].sort())
+  expect([...colours('eat', 'kappa', { lcd: true })].sort()).toEqual([0x232820, 0xc4ccb2].sort())
+  expect(colours('eat', 'kappa', {}, true).has(0x62c283)).toBe(false) // darker at night
+  expect(colours('dirty', 'kappa', { kinds: true }).has(DIRT)).toBe(true)
+  expect([colours('dirty', 'kappa').has(DIRT), colours('dirty', 'kappa').has(FOOD)]).toEqual([false, true]) // kinds off: all yellow
+  // An icon placed beside the pet takes its own colour, not the pet's.
+  expect(colours('call', 'kyubi', { kinds: true }, false, 32, 1).has(ALERT)).toBe(true)
+  // The egg is drawn in its own colour.
+  expect(colours('egg', 'egg', { kinds: true }).has(colorOf('egg'))).toBe(true)
+  expect(colours('egg', 'egg', { kinds: true }).has(FOOD)).toBe(false)
+})
+
+test('scenery and particles show on the coloured screen only, and small pixels only above 32 columns', () => {
+  expect(colours('idle', 'kitsune', { scenery: true }).has(GROUND)).toBe(true)
+  expect(colours('sleep', 'kitsune', { scenery: true }, true).has(STAR)).toBe(true)
+  expect(colours('idle', 'kitsune', { scenery: true, lcd: true }).has(GROUND)).toBe(false)
+  expect([...Array(8).keys()].some(t => colours('idle', 'kitsune', { particles: true }, false, 32, t).has(LOVE))).toBe(true)
+  expect(colours('sleep', 'kitsune', { particles: true }).has(LOVE)).toBe(false)
+  const px = scene('idle', { ch: 'kitsune' }, 0), look = { lcd: false, detail: 'pixel', color: colorOf('kitsune') } as const
+  expect(cells(px, false, 32, { ...look, fine: true })).toBe(cells(px, false, 32, look))
+  expect(cells(px, false, 64, { ...look, fine: true })).not.toBe(cells(px, false, 64, look))
 })
 
 test('braille detail draws the same screen in braille dots', () => {
   const px = scene('idle', { ch: 'kitsune' }, 0)
-  const w = words(cells(px, false, 32, { palette: 'yokai', detail: 'braille', color: colorOf('kitsune') }))
+  const w = words(cells(px, false, 32, { lcd: false, detail: 'braille', color: colorOf('kitsune') }))
   expect(w.length).toBe(32 * 12 * 3)
   const glyphs = [...w].filter((_, i) => i % 3 === 0)
   expect(glyphs.every(g => g >= 0x2800 && g <= 0x28ff)).toBe(true)
@@ -449,13 +466,15 @@ const all = (n: unknown): { type?: string; props?: Record<string, unknown>; chil
 
 test('the pane lays itself out by its size, and the care buttons are always there', async ($, on) => {
   await session($, on, { 'pet.json': JSON.stringify(child()) })
-  const cases: [number, number, string, number | null][] = [
-    [56, 56, 'stack', 56], // the screen as wide as the pane, everything under it as wide
-    [34, 56, 'stack', 34],
-    [90, 17, 'side', 42], // wide and short: the text beside a screen as tall as the pane allows
-    [30, 12, 'text', null], // too small for the screen: the text alone
+  // cols, rows, layout, the screen's width, whether the model line shows (it gives way so the buttons fit).
+  const cases: [number, number, string, number | null, boolean][] = [
+    [56, 56, 'stack', 56, true], // the screen as wide as the pane, everything under it as wide
+    [34, 56, 'stack', 34, true],
+    [90, 17, 'side', 42, true], // wide and short: the text beside a screen as tall as the pane allows
+    [64, 13, 'side', 32, false], // the dock's width, short: a smaller screen so the text beside it fits
+    [30, 12, 'text', null, false], // too small for the screen: the text alone
   ]
-  for (const [cols, rows, layout, screen] of cases) {
+  for (const [cols, rows, layout, screen, model] of cases) {
     const ui = await pane($, 'terminal', cols, rows)
     const tree = await ui.drawn()
     const els = all(tree)
@@ -463,16 +482,16 @@ test('the pane lays itself out by its size, and the care buttons are always ther
     expect(lcd ? lcd.props!.columns : null).toBe(screen)
     const side = els.some(e => e.type === 'Box' && e.props?.flexDirection === 'row' && all(e).some(x => x.type === 'Raster'))
     expect(side ? 'side' : lcd ? 'stack' : 'text').toBe(layout)
-    if (layout === 'stack') expect((tree as { props: { width?: number } }).props.width).toBe(screen!)
+    if (layout === 'stack') expect(els.find(e => e.type === 'Box' && typeof e.props?.width === 'number')?.props!.width).toBe(screen!)
     // Too small for everything, the model line gives way so the buttons fit.
-    expect(!!(await ui.find({ type: 'Text', text: /helpers/ }))).toBe(layout !== 'text')
+    expect(!!(await ui.find({ type: 'Text', text: /helpers/ }))).toBe(model)
     for (const k of ['b-eat', 'b-snack', 'b-game', 'b-clean', 'b-heal', 'b-light', 'b-scold', 'b-stats']) expect(await ui.find({ key: k })).toBeDefined()
     await ui.unmount()
   }
 })
 
-for (const [palette, colored] of [['yokai', true], ['lcd', false]] as const) {
-  kitTest(colored ? "bars take the theme's colours by level in the yokai palette" : 'bars stay uncoloured in the LCD palette', { timeoutMs: 60_000, options: { palette } }, async ($, on) => {
+for (const [colour, colored] of [['screen', false], ['all', true], ['text', true], ['none', false]] as const) {
+  kitTest(`with colour ${colour} the bars are ${colored ? "coloured by level from the theme" : "plain"}`, { timeoutMs: 60_000, options: { colour } }, async ($, on) => {
     await session($, on, { 'pet.json': JSON.stringify({ ...child(), joy: 0, sat: 90 }) })
     const ui = await pane($, 'terminal', 70, 60)
     const tones = all(await ui.drawn()).flatMap(e => (e.type === 'Text' && typeof e.props?.color === 'string' && e.props.color !== 'yellow' ? [e.props.color] : []))

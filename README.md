@@ -32,7 +32,7 @@ The pane opens on the next session start. `/hd` opens it any time, `/hd stats` p
 
 ## Requirements
 
-- Claude Code 2.1.310 or newer (the version CI tests), in a terminal. The LCD is drawn only in the terminal; other surfaces show the text and the buttons.
+- Claude Code 2.1.310 or newer (the version CI tests), in a terminal. The screen is drawn only in the terminal; other surfaces show the text and the buttons.
 - A pane at least 32 columns wide inside its frame. The screen grows with the pane up to 64 columns, keeping its shape, and everything under it is as wide as the screen. In a wide and short pane the text goes beside the screen; in one too small for the screen, the pane shows the text and the buttons alone.
 
 ## Care
@@ -65,8 +65,12 @@ Run `/config` and find Hitodama.
 | Option | Values | Default |
 | --- | --- | --- |
 | `language` | `en` English, `ru` Русский, `zh` 中文, `ja` 日本語, `ko` 한국어, `es` Español, `pt` Português, `de` Deutsch, `fr` Français | `en` |
-| `palette` | `yokai` a dark screen, each yokai in its own colour, the bars coloured by level; `lcd` two greys, as on a pocket LCD | `yokai` |
+| `colour` | `screen` the screen in colour: dark, each yokai in its own colour; `all` the bars too, coloured by level; `text` the bars only, the screen in two greys as on a pocket LCD; `none` the LCD and plain bars | `screen` |
 | `detail` | `pixel` 32 × 24 pixels; `braille` the picture smoothed and drawn in braille dots, four times as many in the same space (how they look depends on the terminal's font) | `pixel` |
+| `smallPixels` | on: on a screen wider than 32 columns, the picture smoothed to twice the pixels, each half as big | on |
+| `itemColours` | on: on the coloured screen, things around the pet by kind (food yellow, droppings brown, sleep white, hearts pink, medicine blue, alarms red); off: all yellow | on |
+| `scenery` | on: on the coloured screen, the ground, clouds by day and stars by night | on |
+| `particles` | on: on the coloured screen, hearts rising while the pet eats or walks | on |
 
 ## Privacy
 

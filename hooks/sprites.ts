@@ -30,6 +30,14 @@ const IC = {
   arrowR: ['#.', '##', '#.'],
   arrowL: ['.#', '##', '.#'],
 }
+// What a pixel is, so the screen can colour it: 0 nothing, 1 the pet (and the egg), from 2 the kinds of things around
+// it. The LCD draws them all alike.
+export const K = { pet: 1, food: 2, dirt: 3, pale: 4, love: 5, care: 6, alert: 7 } as const
+const INK: Record<keyof typeof IC, number> = {
+  z: K.pale, heart: K.love, rice: K.food, candy: K.food, poop: K.dirt, skull: K.alert, plus: K.care, syringe: K.care,
+  drop: K.care, vein: K.alert, clock: K.pale, friend: K.pale, bang: K.alert, bigBang: K.alert, no: K.alert,
+  arrowR: K.food, arrowL: K.food,
+}
 const EYE: Record<string, string[]> = {
   open: ['#', '#'], closed: ['...', '###'], happy: ['.#.', '#.#'], x: ['#.#', '.#.', '#.#'],
   half: ['..', '##'], wide: ['##', '##'], angry: ['#..', '.#.', '.#.'],
@@ -103,15 +111,15 @@ function packFor(load: number) {
 }
 const WALK = [0, 1, 2, 1, 0, -1, -2, -1]
 
-export type SceneOpts = { ch: string; hidePet?: boolean; load?: number; poops?: number; agents?: number; game?: { dir: number; wins: boolean[] } }
+export type SceneOpts = { ch: string; load?: number; poops?: number; agents?: number; game?: { dir: number; wins: boolean[] } }
 
 export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
   const g = grid()
   const p: Pose = { ch: o.ch, cx: 16 + WALK[t % 8]!, gy: 19, phase: t, eyes: t % 9 === 0 ? 'closed' : 'open', mouth: 'smile', feet: true }
-  let showPet = !o.hidePet, load = o.load ?? 0, poops = o.poops ?? 0, agents = o.agents ?? 0, invert = false
+  let showPet = true, load = o.load ?? 0, poops = o.poops ?? 0, agents = o.agents ?? 0, invert = false
   let B: Bounds = { top: 8, right: 22, left: 10, cy: 12, cx: 16 }
   const before: (() => void)[] = [], after: (() => void)[] = []
-  const sweat = () => { if (t % 2) bmp(g, B.right + 1, B.top, IC.drop) }
+  const sweat = () => { if (t % 2) bmp(g, B.right + 1, B.top, IC.drop, false, INK.drop) }
   switch (id) {
     case 'egg':
       showPet = false; drawEgg(g, 16 + [0, 1, 0, -1][t % 4]!, 12, 'whole'); break
@@ -123,27 +131,27 @@ export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
       Object.assign(p, { cx: 16, eyes: 'happy' }); invert = t % 2 === 0; break
     case 'listen':
       Object.assign(p, { cx: 16, look: { dx: -1, dy: 1 }, mouth: 'flat' })
-      after.push(() => { for (let i = 0; i <= t % 4; i++) g.set(2 + i * 2, 22) })
+      after.push(() => { for (let i = 0; i <= t % 4; i++) g.set(2 + i * 2, 22, K.pale) })
       break
     case 'happy':
       Object.assign(p, { cx: 16, eyes: 'happy', mouth: 'grin' }); p.gy -= t % 2 ? 3 : 0
-      after.push(() => [[3, 4], [27, 6], [4, 15], [27, 15]].forEach(([x, y], i) => { if ((t + i) % 2) bmp(g, x!, y!, IC.plus) }))
+      after.push(() => [[3, 4], [27, 6], [4, 15], [27, 15]].forEach(([x, y], i) => { if ((t + i) % 2) bmp(g, x!, y!, IC.plus, false, INK.plus) }))
       break
     case 'angry':
       Object.assign(p, { cx: 16 + (t % 2 ? 1 : -1), eyes: 'angry', mouth: 'frown' })
-      after.push(() => { if (t % 2) bmp(g, 25, 2, IC.vein) })
+      after.push(() => { if (t % 2) bmp(g, 25, 2, IC.vein, false, INK.vein) })
       break
     case 'bored':
       Object.assign(p, { cx: 14, eyes: 'half', mouth: 'flat', look: { dx: 1, dy: 0 } })
-      after.push(() => { for (let i = 0; i < t % 4; i++) g.set(24 + i * 2, 5) })
+      after.push(() => { for (let i = 0; i < t % 4; i++) g.set(24 + i * 2, 5, K.pale) })
       break
     case 'call':
       Object.assign(p, { cx: 15, mouth: t % 2 ? 'open' : 'o' })
-      after.push(() => { if (t % 2) { bmp(g, B.right + 2, B.top, IC.bang); bmp(g, B.right + 4, B.top - 1, IC.bang) } })
+      after.push(() => { if (t % 2) { bmp(g, B.right + 2, B.top, IC.bang, false, INK.bang); bmp(g, B.right + 4, B.top - 1, IC.bang, false, INK.bang) } })
       break
     case 'hungry':
       Object.assign(p, { cx: 13, mouth: t % 2 ? 'open' : 'o' })
-      after.push(() => { bubble(g, 21, 0, 10, 8); if (t % 2) bmp(g, 23, 1, IC.rice); g.set(20, 8); g.set(19, 9) })
+      after.push(() => { bubble(g, 21, 0, 10, 8, K.pale); if (t % 2) bmp(g, 23, 1, IC.rice, false, INK.rice); g.set(20, 8, K.pale); g.set(19, 9, K.pale) })
       break
     case 'dirty':
       Object.assign(p, { eyes: 'half', mouth: 'frown' }); poops = Math.max(poops, 2); break
@@ -151,73 +159,73 @@ export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
       Object.assign(p, { cx: 15, eyes: 'half', mouth: 'flat', sq: 0.5 }); after.push(sweat); break
     case 'sick':
       Object.assign(p, { cx: 13, eyes: 'half', mouth: 'wavy' })
-      after.push(() => { if (t % 2) bmp(g, B.right + 2, B.top, IC.skull) })
+      after.push(() => { if (t % 2) bmp(g, B.right + 2, B.top, IC.skull, false, INK.skull) })
       break
     case 'sleep': case 'limit_hit':
       Object.assign(p, { cx: 15, eyes: 'closed', mouth: 'flat', sq: 1, feet: false })
       after.push(() => {
-        ;[[23, 7], [25, 4], [27, 1]].slice(0, (t % 3) + 1).forEach(([x, y]) => bmp(g, x!, y!, IC.z))
-        if (id === 'limit_hit') bmp(g, 3, 2, IC.clock)
+        ;[[23, 7], [25, 4], [27, 1]].slice(0, (t % 3) + 1).forEach(([x, y]) => bmp(g, x!, y!, IC.z, false, INK.z))
+        if (id === 'limit_hit') bmp(g, 3, 2, IC.clock, false, INK.clock)
       })
       break
     case 'night_grumpy':
       Object.assign(p, { cx: 15, eyes: 'half', mouth: 'frown' })
-      after.push(() => { g.set(22, 8); if (t % 2) { g.set(24, 6); bmp(g, 3, 3, IC.vein) } })
+      after.push(() => { g.set(22, 8, K.pale); if (t % 2) { g.set(24, 6, K.pale); bmp(g, 3, 3, IC.vein, false, INK.vein) } })
       break
     case 'tantrum':
       Object.assign(p, { cx: 17 + (t % 2 ? 1 : 0), eyes: 'angry', mouth: 'frown', look: { dx: 1, dy: 0 } })
-      after.push(() => { bmp(g, 2, 13, IC.rice); bmp(g, 3, 9, IC.no); if (t % 2) bmp(g, 26, 2, IC.bang) })
+      after.push(() => { bmp(g, 2, 13, IC.rice, false, INK.rice); bmp(g, 3, 9, IC.no, false, INK.no); if (t % 2) bmp(g, 26, 2, IC.bang, false, INK.bang) })
       break
     case 'scold':
       Object.assign(p, { cx: 18, eyes: 'closed', mouth: 'frown', sq: 0.5 })
-      after.push(() => { if (t % 2) bmp(g, 4, 5, IC.bigBang); sweat() })
+      after.push(() => { if (t % 2) bmp(g, 4, 5, IC.bigBang, false, INK.bigBang); sweat() })
       break
     case 'refuse':
       Object.assign(p, { cx: 16 + (t % 2 ? 1 : -1), eyes: 'closed', mouth: 'frown', look: { dx: t % 2 ? 1 : -1, dy: 0 } })
-      after.push(() => bmp(g, 3, 9, IC.no))
+      after.push(() => bmp(g, 3, 9, IC.no, false, INK.no))
       break
     case 'eat':
       Object.assign(p, { cx: 12, eyes: t % 2 ? 'closed' : 'happy', mouth: t % 2 ? 'chew' : 'o' })
-      after.push(() => { bmp(g, 23, 13, IC.rice); for (let i = 0; i < t % 5; i++) for (let y = 13; y < 18; y++) g.set(23 + i, y, 0) })
+      after.push(() => { bmp(g, 23, 13, IC.rice, false, INK.rice); for (let i = 0; i < t % 5; i++) for (let y = 13; y < 18; y++) g.set(23 + i, y, 0) })
       break
     case 'snack':
       Object.assign(p, { cx: 12, eyes: 'happy', mouth: t % 2 ? 'chew' : 'smile' })
-      after.push(() => { bmp(g, 23, 15, IC.candy); bmp(g, 22, 5 - (t % 3), IC.heart) })
+      after.push(() => { bmp(g, 23, 15, IC.candy, false, INK.candy); bmp(g, 22, 5 - (t % 3), IC.heart, false, INK.heart) })
       break
     case 'game': {
       const dir = o.game?.dir ?? 0
       Object.assign(p, { cx: 16, look: { dx: dir, dy: 0 }, mouth: dir ? 'grin' : 'flat', eyes: dir ? 'happy' : 'open' })
       after.push(() => {
-        if (dir) bmp(g, dir < 0 ? 2 : 28, 11, dir < 0 ? IC.arrowL : IC.arrowR)
-        else if (t % 2) { bmp(g, 2, 11, IC.arrowL); bmp(g, 28, 11, IC.arrowR) }
+        if (dir) bmp(g, dir < 0 ? 2 : 28, 11, dir < 0 ? IC.arrowL : IC.arrowR, false, INK.arrowR)
+        else if (t % 2) { bmp(g, 2, 11, IC.arrowL, false, INK.arrowL); bmp(g, 28, 11, IC.arrowR, false, INK.arrowR) }
         const wins = o.game?.wins ?? []
-        for (let i = 0; i < 5; i++) { const x = 11 + i * 2; if (wins[i]) g.set(x, 1); if (i < wins.length) g.set(x, 2) }
+        for (let i = 0; i < 5; i++) { const x = 11 + i * 2; if (wins[i]) g.set(x, 1, K.food); if (i < wins.length) g.set(x, 2, K.food) }
       })
       break
     }
     case 'heal':
       Object.assign(p, { cx: 13, eyes: t % 3 === 0 ? 'closed' : 'happy', mouth: t % 3 === 0 ? 'frown' : 'smile' })
-      after.push(() => { bmp(g, 24, 8, IC.syringe); if (t % 2) bmp(g, 26, 2, IC.plus) })
+      after.push(() => { bmp(g, 24, 8, IC.syringe, false, INK.syringe); if (t % 2) bmp(g, 26, 2, IC.plus, false, INK.plus) })
       break
     case 'clean': {
       Object.assign(p, { cx: 11, eyes: 'happy' }); poops = 0
       const sh = (t % 5) * 3
-      after.push(() => { [18, 24].forEach(x => bmp(g, x + sh, 20, IC.poop)); for (let y = 19; y < 24; y += 2) g.set(16 + sh, y) })
+      after.push(() => { [18, 24].forEach(x => bmp(g, x + sh, 20, IC.poop, false, INK.poop)); for (let y = 19; y < 24; y += 2) g.set(16 + sh, y, K.care) })
       break
     }
     case 'think_low': case 'think_med': case 'think_high': case 'think_max': {
       const lvl = { think_low: 1, think_med: 2, think_high: 3, think_max: 4 }[id]
       Object.assign(p, { cx: 13, look: { dx: 0, dy: -1 }, mouth: 'flat' })
       after.push(() => {
-        if (lvl === 1) { if (t % 2) g.set(21, 7); return }
-        g.set(21, 7); if (lvl === 2 && t % 3 === 0) return
-        g.set(22, 5)
+        if (lvl === 1) { if (t % 2) g.set(21, 7, K.pale); return }
+        g.set(21, 7, K.pale); if (lvl === 2 && t % 3 === 0) return
+        g.set(22, 5, K.pale)
         if (lvl === 2) return
-        bubble(g, 23, 0, 9, 6)
-        if (lvl === 3) { for (let i = 0; i <= t % 3; i++) g.set(25 + i * 2, 3) }
+        bubble(g, 23, 0, 9, 6, K.pale)
+        if (lvl === 3) { for (let i = 0; i <= t % 3; i++) g.set(25 + i * 2, 3, K.pale) }
         else {
-          if (t % 2) { bmp(g, 25, 1, IC.bang); bmp(g, 27, 1, IC.bang); bmp(g, 29, 1, IC.bang) }
-          g.set(B.cx - 2, B.top - 2 - (t % 2)); g.set(B.cx + 1, B.top - 3 + (t % 2))
+          if (t % 2) { bmp(g, 25, 1, IC.bang, false, INK.bang); bmp(g, 27, 1, IC.bang, false, INK.bang); bmp(g, 29, 1, IC.bang, false, INK.bang) }
+          g.set(B.cx - 2, B.top - 2 - (t % 2), K.care); g.set(B.cx + 1, B.top - 3 + (t % 2), K.care)
           sweat()
         }
       })
@@ -225,19 +233,19 @@ export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
     }
     case 'waiting':
       Object.assign(p, { cx: 12, look: { dx: 1, dy: 0 }, mouth: 'flat', feet: 'tap' }); agents = 0
-      after.push(() => { rect(g, 26, 7, 6, 13); g.set(27, 14); if (t % 2) bmp(g, 19, 1, IC.clock) })
+      after.push(() => { rect(g, 26, 7, 6, 13, K.pale); g.set(27, 14, K.pale); if (t % 2) bmp(g, 19, 1, IC.clock, false, INK.clock) })
       break
     case 'load_heavy':
       Object.assign(p, { cx: 16 + Math.round(WALK[t % 8]! / 2), eyes: 'half' }); break
     case 'load_max':
       Object.assign(p, { cx: 17, eyes: 'half', mouth: 'wavy', sq: 1 })
-      after.push(() => { bubble(g, 25, 0, 7, 7); if (t % 2) { bmp(g, 27, 1, IC.bang); bmp(g, 29, 1, IC.bang) } })
+      after.push(() => { bubble(g, 25, 0, 7, 7, K.pale); if (t % 2) { bmp(g, 27, 1, IC.bang, false, INK.bang); bmp(g, 29, 1, IC.bang, false, INK.bang) } })
       break
     case 'relief':
       Object.assign(p, { cx: 19, eyes: 'happy', mouth: 'grin' }); p.gy -= t % 2 ? 2 : 0; load = 0
       after.push(() => {
-        rect(g, 2, 15, 7, 8); for (let i = 1; i < 6; i++) g.set(2 + i, 17)
-        const k = t % 3; g.set(11, 6 - k); g.set(10, 7 - k); g.set(28, 6 - k); g.set(29, 7 - k)
+        rect(g, 2, 15, 7, 8, K.pale); for (let i = 1; i < 6; i++) g.set(2 + i, 17, K.pale)
+        const k = t % 3; g.set(11, 6 - k, K.love); g.set(10, 7 - k, K.love); g.set(28, 6 - k, K.love); g.set(29, 7 - k, K.love)
       })
       break
     case 'limit_tired':
@@ -245,20 +253,20 @@ export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
     case 'away':
       showPet = false
       after.push(() => {
-        for (let x = 12, i = 0; x < 28; x += 4, i++) { const y = 21 + (i % 2); g.set(x, y); g.set(x + 1, y) }
-        if (t % 2) bmp(g, 29, 10, IC.arrowR)
+        for (let x = 12, i = 0; x < 28; x += 4, i++) { const y = 21 + (i % 2); g.set(x, y, K.pale); g.set(x + 1, y, K.pale) }
+        if (t % 2) bmp(g, 29, 10, IC.arrowR, false, INK.arrowR)
         const pk = packFor(load)
-        if (pk) { rect(g, 3, 22 - pk.h, pk.w + 1, pk.h); for (let i = 1; i < pk.w; i++) g.set(3 + i, 24 - pk.h) }
+        if (pk) { rect(g, 3, 22 - pk.h, pk.w + 1, pk.h, K.pale); for (let i = 1; i < pk.w; i++) g.set(3 + i, 24 - pk.h, K.pale) }
       })
       poops = 0; agents = 0
       break
     case 'dead':
       Object.assign(p, { ch: 'obake', cx: 10, gy: 18 - (t % 4), eyes: 'closed', mouth: 'flat', feet: false }); load = 0; poops = 0
       before.push(() => {
-        bubble(g, 20, 7, 9, 13); for (let y = 9; y < 15; y++) g.set(24, y); for (let x = 22; x < 27; x++) g.set(x, 11)
-        for (let x = 15; x < 32; x++) g.set(x, 20)
+        bubble(g, 20, 7, 9, 13, K.pale); for (let y = 9; y < 15; y++) g.set(24, y, K.pale); for (let x = 22; x < 27; x++) g.set(x, 11, K.pale)
+        for (let x = 15; x < 32; x++) g.set(x, 20, K.pale)
       })
-      after.push(() => { for (let x = B.left + 2; x < B.right - 1; x++) g.set(x, B.top - 2) })
+      after.push(() => { for (let x = B.left + 2; x < B.right - 1; x++) g.set(x, B.top - 2, K.pale) })
       break
   }
   before.forEach(f => f())
@@ -271,24 +279,32 @@ export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
   if (showPet && load >= 80 && !['tired', 'limit_tired', 'think_max', 'scold'].includes(id)) sweat()
   for (let i = 0; i < Math.min(poops, 4); i++) {
     const x = 26 - i * 6
-    bmp(g, x, 20, IC.poop)
-    if ((t + i) % 2) { g.set(x + 1, 18); g.set(x + 3, 17) } else { g.set(x + 1, 17); g.set(x + 3, 18) }
+    bmp(g, x, 20, IC.poop, false, INK.poop)
+    if ((t + i) % 2) { g.set(x + 1, 18, K.dirt); g.set(x + 3, 17, K.dirt) } else { g.set(x + 1, 17, K.dirt); g.set(x + 3, 18, K.dirt) }
   }
   const spots = [[2, 1], [8, 2], [14, 1]]
-  for (let i = 0; i < Math.min(agents, 3); i++) bmp(g, spots[i]![0]!, spots[i]![1]! + ((t + i) % 2), IC.friend)
-  if (invert) for (let i = 0; i < g.a.length; i++) g.a[i] = g.a[i]! ^ 1
+  for (let i = 0; i < Math.min(agents, 3); i++) bmp(g, spots[i]![0]!, spots[i]![1]! + ((t + i) % 2), IC.friend, false, INK.friend)
+  if (invert) for (let i = 0; i < g.a.length; i++) g.a[i] = g.a[i] ? 0 : K.pet
   return g.a
 }
 
-// How the screen is drawn. palette: lcd, two greys as on a pocket LCD; yokai, a dark screen with the pet in its own
-// colour and items (food, droppings, icons) in a warm yellow. detail: pixel, two pixels per cell (▀ and its
-// background); braille, the frame smoothed to twice the size and drawn in braille dots, one colour per cell.
-export type Palette = 'yokai' | 'lcd'
+// How the screen is drawn. lcd: two greys as on a pocket LCD, every pixel alike; otherwise a dark screen with the
+// pet in its own colour. detail: pixel, two pixels per cell (▀ and its background); braille, the picture smoothed
+// and drawn in braille dots, one colour per cell. Above 32 columns, fine smooths the picture to twice the pixels
+// (Scale2x), each half as big. kinds colours items by kind (else all yellow); scenery adds the ground, clouds by
+// day and stars by night; particles, hearts rising while it eats or walks. scene and t: what is shown and the frame.
 export type Detail = 'pixel' | 'braille'
-// color: the pet's colour; items: the frame's items alone (the scene drawn with hidePet), to colour them apart.
-export type ScreenLook = { palette: Palette; detail: Detail; color: number; items?: Uint8Array }
+export type ScreenLook = {
+  lcd: boolean; detail: Detail; color: number
+  fine?: boolean; kinds?: boolean; scenery?: boolean; particles?: boolean; scene?: string; t?: number
+}
 const LCD = { day: { bg: 0xc4ccb2, px: 0x232820 }, night: { bg: 0x8a947b, px: 0x181c14 } }
-const DARK = { day: 0x1b1f27, night: 0x0f1218 }, ITEM = 0xf2c14e
+const DARK = { day: 0x1b1f27, night: 0x0f1218 }
+// Ink colours from K.food on: food, dirt, pale, love, care, alert.
+const KIND = [0xf2c14e, 0x9b6b43, 0xe8edf5, 0xff7aa2, 0x8fd3ff, 0xff6b5a]
+// Scenery and particles, after the inks: ground, ground dots, star, dim star, cloud, sparkle, heart.
+const S = { ground: 8, dots: 9, star: 10, dim: 11, cloud: 12, spark: 13, heart: 14 } as const
+const SCENERY = { day: [0x2b3340, 0x252c37, 0, 0, 0x2f3847, 0xfff4c2, 0xff7aa2], night: [0x1c2230, 0x171c27, 0xc9d1e3, 0x59617a, 0, 0xfff4c2, 0xb75b77] }
 // The egg and the ghost a dead pet becomes are not characters of a line.
 const OWN: Record<string, number> = { egg: 0xe9e2cf, obake: 0xcfd8e3 }
 export const colorOf = (ch: string) => CHARS[ch]?.color ?? OWN[ch] ?? 0xd6d9de
@@ -296,10 +312,12 @@ export const colorOf = (ch: string) => CHARS[ch]?.color ?? OWN[ch] ?? 0xd6d9de
 const mix = (a: number, b: number, t: number) =>
   [16, 8, 0].reduce((n, sh) => n | (Math.round(((a >> sh) & 255) * (1 - t) + ((b >> sh) & 255) * t) << sh), 0)
 
-// Background, pet and item colours.
-function colors(look: ScreenLook, night: boolean): [number, number, number] {
-  if (look.palette === 'lcd') { const P = night ? LCD.night : LCD.day; return [P.bg, P.px, P.px] }
-  return night ? [DARK.night, mix(look.color, DARK.night, 0.35), mix(ITEM, DARK.night, 0.35)] : [DARK.day, look.color, ITEM]
+// The colour of each ink, and of the scenery after them.
+function palette(look: ScreenLook, night: boolean): number[] {
+  if (look.lcd) { const P = night ? LCD.night : LCD.day; return [P.bg, ...Array(14).fill(P.px)] }
+  const bg = night ? DARK.night : DARK.day, dim = (c: number) => (night ? mix(c, bg, 0.35) : c)
+  const items = look.kinds ? KIND : KIND.map(() => KIND[0]!)
+  return [bg, dim(look.color), ...items.map(dim), ...(night ? SCENERY.night : SCENERY.day)]
 }
 
 // Scale2x: each pixel becomes four, with corners rounded where neighbours agree.
@@ -317,32 +335,59 @@ function scale2x(g: Uint8Array, w: number, h: number): Uint8Array {
   return o
 }
 
+const STARS = [[6, 4], [18, 9], [33, 3], [47, 7], [58, 12], [26, 15], [52, 2]]
+const CLOUD = ['..####....', '.######.##', '##########', '.########.']
+const SPARKS = [[-10, 2], [-12, 6], [12, 9]]
+// Scenery behind the picture and particles over it, on a w × h picture (32 × 24 or larger).
+function decorate(g: Uint8Array, w: number, h: number, look: ScreenLook, night: boolean) {
+  const t = look.t ?? 0, k = w / 64
+  const put = (x: number, y: number, v: number, over = false) => {
+    x = Math.round(x); y = Math.round(y)
+    if (x >= 0 && x < w && y >= 0 && y < h && (over || !g[y * w + x])) g[y * w + x] = v
+  }
+  if (look.scenery) {
+    const floor = Math.round((h * 45) / 48)
+    for (let x = 0; x < w; x++) { put(x, floor, S.ground); if ((x + t) % 3 === 0) put(x, floor + 1, S.dots) }
+    if (night) STARS.forEach(([x, y]) => put(x! * k, y! * k, (x! + t) % 4 ? S.star : S.dim))
+    else CLOUD.forEach((r, y) => [...r].forEach((c, x) => { if (c === '#' && (k >= 1 || (x % 2 === 0 && y % 2 === 0))) put((4 + (t % 20) + x) * k, (3 + y) * k, S.cloud) }))
+  }
+  if (look.particles && ['eat', 'snack', 'idle', 'happy'].includes(look.scene ?? '')) {
+    let top = h, sx = 0, n = 0
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (g[y * w + x] === K.pet) { top = Math.min(top, y); sx += x; n++ }
+    if (!n) return
+    const cx = sx / n, rise = (t % 8) * 2 * Math.max(1, k)
+    IC.heart.forEach((r, y) => [...r].forEach((c, x) => { if (c === '#') put(cx + 6 * Math.max(1, k) + (t % 2) + x, top - 2 - rise + y, S.heart, true) }))
+    if (t % 4 === 1) SPARKS.forEach(([dx, dy]) => put(cx + dx! * Math.max(1, k), top + dy! * Math.max(1, k), S.spark, true))
+  }
+}
+
 const DOTS = [[0x1, 0x8], [0x2, 0x10], [0x4, 0x20], [0x40, 0x80]]
 // The screen's rows for a width in columns: 32 × 12 cells hold 32 × 24 pixels, so the picture keeps its shape.
 export const screenRows = (cols: number) => Math.round((cols * 3) / 8)
-// The screen at a width of cols columns (32 to 64 and beyond). Each cell takes the pixels under it; at a width that is
-// not a whole multiple of 32, some pixels take one column more than others.
-export function cells(px: Uint8Array, night: boolean, cols = W, look: ScreenLook = { palette: 'lcd', detail: 'pixel', color: 0 }): string {
-  const [bg, pet, item] = colors(look, night)
-  const ink = [bg, pet, item]
-  // 0 nothing, 1 the pet, 2 an item.
-  const layer = Uint8Array.from(px, (v, i) => (v ? (look.items?.[i] ? 2 : 1) : 0))
+// The screen at a width of cols columns. Each cell takes the pixels under it; at a width that is not a whole
+// multiple of the picture's, some pixels take one column more than others.
+export function cells(px: Uint8Array, night: boolean, cols = W, look: ScreenLook = { lcd: true, detail: 'pixel', color: 0 }): string {
+  const ink = palette(look, night)
   const rows = screenRows(cols)
   const words = new Uint32Array(cols * rows * 3)
-  let g: Uint8Array = layer, w = W, h = H
+  let g: Uint8Array = px, w = W, h = H
+  if (look.detail === 'braille') while (w < 2 * cols) { g = scale2x(g, w, h); w *= 2; h *= 2 }
+  else if (look.fine && cols > W) { g = scale2x(g, w, h); w *= 2; h *= 2 }
+  if (!look.lcd && (look.scenery || look.particles)) { g = Uint8Array.from(g); decorate(g, w, h, look, night) }
   if (look.detail === 'braille') {
-    // 2 × 4 dots per cell, from a frame smoothed until it has at least as many.
-    while (w < 2 * cols) { g = scale2x(g, w, h); w *= 2; h *= 2 }
+    // 2 × 4 dots per cell, in the colour most of them have.
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-      let bits = 0, pets = 0, items = 0
+      let bits = 0
+      const count = new Map<number, number>()
       for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 2; dx++) {
-        const v = g[Math.floor(((4 * r + dy) * h) / (4 * rows)) * w + Math.floor(((2 * c + dx) * w) / (2 * cols))]
-        if (v) { bits |= DOTS[dy]![dx]!; if (v === 2) items++; else pets++ }
+        const v = g[Math.floor(((4 * r + dy) * h) / (4 * rows)) * w + Math.floor(((2 * c + dx) * w) / (2 * cols))]!
+        if (v) { bits |= DOTS[dy]![dx]!; count.set(v, (count.get(v) ?? 0) + 1) }
       }
+      const top = [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? K.pet
       const i = (r * cols + c) * 3
       words[i] = 0x2800 + bits
-      words[i + 1] = items > pets ? item : pet
-      words[i + 2] = bg
+      words[i + 1] = ink[top]!
+      words[i + 2] = ink[0]!
     }
     return base64(new Uint8Array(words.buffer))
   }
