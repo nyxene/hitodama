@@ -5,6 +5,7 @@ import { LANGS, langFrom, setLang, t as tr } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
 import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
 import { cells, colorOf, scene, screenRows, type ScreenLook } from '../hooks/sprites'
+import { tuning as T } from '../hooks/tuning'
 import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
@@ -1080,7 +1081,13 @@ test('a pet asleep on an empty stomach wakes hungry, not dead', () => {
   expect(p.call?.reason).toBe('hungry')
 })
 
-test('a care key that changes nothing answers on the screen but stays out of the journal', async ($, on) => {
+test('asleep, only the light and medicine are taken; the light changes something, a meal does not', () => {
+  const p = { ...child(), asleep: true, lightsOff: false }
+  expect([act(p, 'eat', p.at).noop, act(p, 'snack', p.at).noop, act(p, 'light', p.at).noop]).toEqual([true, true, undefined])
+  expect(p.lightsOff).toBe(true)
+})
+
+test('a care key that changes nothing stays out of the journal', async ($, on) => {
   const p = { ...child(), tantrum: { since: T0 }, poops: 0, log: [] } // refuses food in a tantrum
   // The timer ticks only when told to, so no tick of its own writes over a press's.
   const s = await session($, on, { 'pet.json': JSON.stringify(p) }, { timer: true })
@@ -1097,7 +1104,7 @@ test('a care key that changes nothing answers on the screen but stays out of the
   expect(journal()).toEqual([])
   s.files['pet.json'] = s.writes['pet.json']!
   await ui.press({ key: 'b-snack' })
-  expect(journal()).toEqual([tr().candy(10, 2)])
+  expect(journal()).toEqual([tr().candy(T.care.snackJoy, T.weight.snack)])
   await ui.unmount()
 })
 
