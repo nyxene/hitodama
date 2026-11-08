@@ -105,11 +105,19 @@ Hitodama makes no network requests and sends nothing anywhere. What it touches:
 - **Files:** reads and writes only `~/.claude/hitodama/`: `pet.json` (the pet, its journal, its statistics with the models, effort levels and token counts, and the session ids whose events it has applied), `history.json` (past lives and seen characters), `pet.prev.json` and `history.prev.json` (spare copies of the two, each written just before it) and `seen/<session>.json` (one small file per session, so sessions can tell who has the pet; mods cannot delete files, so old ones stay until you remove them).
 - **Session data:** the session id (to name its file), the name of the repository or working folder (shown in the pane and in your other sessions), the model name, effort level, context fill percentage, the five-hour usage percentage (or the weekly one when there is no five-hour limit) with its reset time and when it was read, the number of reply tokens, helper and failed tool counts, aborted turns, compactions, when you last typed, and when Claude Code showed a permission prompt (it is told the notice's text, such as the tool's name, and keeps only that one showed). With the `auto` language it also reads Claude Code's `/config` rows and keeps only the language setting. It never reads your prompts, replies, files or transcript.
 - **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either, or when it is not an absolute path, it writes one line to the transcript saying what to set, and does nothing else.
-- **Processes:** runs `date +%z` once per session (`/bin/date`, then `/usr/bin/date`, then the one on `PATH`, each tried only when the one before gave no offset) to learn your local UTC offset for bedtimes; without it, it takes the offset the runtime reports.
+- **Processes:** runs `date +%z` once per session (`/bin/date`, then `/usr/bin/date`, then the one on `PATH`, each tried only when the one before gave no offset) to learn your local UTC offset for bedtimes; without it, it takes the offset the runtime reports. On macOS it runs `/usr/bin/pmset -g batt` every five minutes to learn whether the machine runs on battery; elsewhere that fails and it counts as plugged in.
 - **Sessions:** only sessions with a person at the prompt take part; `claude -p` runs and the SDK leave the pet alone.
 - **Notifications:** when the pet calls, throws a tantrum or dies and you have not typed for a minute.
 
 `claude plugin validate` lists every call the mod makes, if you want to check.
+
+## Power
+
+Every open window ticks every three seconds: it reads the other windows' files and the pet. What else runs is kept to what someone can see:
+
+- The pet moves, two frames a second, only while its pane is shown and the window was used in the last ten minutes (you typed, or Claude or a helper worked in it). Otherwise it holds its last frame, which is redrawn only when the scene changes.
+- A window writes its own file when something in it changes, else every 15 seconds. The window that looks after the pet writes `pet.json` when anything it shows changes, else every 30 seconds, and always when it closes.
+- On battery (macOS) the pet moves at one frame a second and both intervals double.
 
 ## Limitations
 

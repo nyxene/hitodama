@@ -31,6 +31,9 @@ export const register: Register = (on, options) => {
   let game: { wins: boolean[]; dir: number } | null = null
   let statsOpen = false
   let frame = 0
+  // Whether the pet moves (the pane shown and the window used lately) and whether the machine runs on battery; both
+  // are found on the tick.
+  let animating = true, onBattery = false
   let screenCols = W // the screen's width, chosen by the terminal render from the pane size; blit frames must match it
   let shown = { scene: 'idle', night: false }
   let followed: Limit = { limit: 0 } // the usage limit of all live windows at the last tick, which prices this window's turns
@@ -175,6 +178,11 @@ export const register: Register = (on, options) => {
       return (repo?.root ?? cwd).split('/').filter(Boolean).pop() ?? 'claude'
     }
     let roomCheckedAt = 0
+    // When the battery was last asked about, and what this window last wrote of its own file and of the pet, and when.
+    let powerCheckedAt = -Infinity, seenWritten = { key: '', at: -Infinity }, petWrittenAt = -Infinity
+    const startedAt = await $.clock.now()
+    // What a pet shows: everything but the time it was last lived to, the needs to whole points.
+    const visible = (q: Pet) => JSON.stringify(q, (k, v) => (k === 'at' ? undefined : typeof v === 'number' && !Number.isInteger(v) ? Math.round(v) : v))
     let busy = Promise.resolve()
     // The newer version a live window runs while this one runs an older one; the pane says so, the transcript does not.
     let outdated: string | null = null
@@ -215,16 +223,34 @@ export const register: Register = (on, options) => {
     }
 
     // One tick: check in, find which window owns the pet; the owner lives the time and writes it.
-    const tickNow = async (action?: (p: Pet, now: number) => void) => {
+    const tickNow = async (action?: (p: Pet, now: number) => void, force = false) => {
       const now = await $.clock.now()
       win.alive = now
       if (now - roomCheckedAt > 5 * 60_000) {
         roomCheckedAt = now
         win.room = await roomName()
       }
+      // On battery (macOS says so through pmset; elsewhere the answer is no) the heartbeats double and the animation
+      // halves.
+      if (now - powerCheckedAt >= T.power.batteryCheckMinutes * 60_000) {
+        powerCheckedAt = now
+        onBattery = !!(await $.process.run(['/usr/bin/pmset', '-g', 'batt']).catch(() => null))?.stdout.includes("'Battery Power'")
+      }
+      const slow = onBattery ? 2 : 1
+      // The pet moves while the pane is shown and the window was used in the last minutes (or Claude works in it);
+      // otherwise it holds its last frame. A listing that fails counts as shown.
+      const panes = await $.ui.panes().catch(() => null)
+      const paneShown = !panes || panes.some(pane => pane.id === PANE && pane.isPlaced && pane.isShown)
+      animating = paneShown && (win.turn || win.agents > 0
+        || now - Math.max(win.lastInput, win.lastActivity, startedAt) < T.power.animateMinutes * 60_000)
       // While saved events wait to be checked, no events go to disk: no owner applies them unchecked, and the ones of
-      // this run, a tick later, still reach it in order.
-      await $.fs.write(seenPath(sid), JSON.stringify(unchecked !== null ? { ...win, events: [] } : win))
+      // this run, a tick later, still reach it in order. The file is written when it changes, else at the heartbeat.
+      const seen = unchecked !== null ? { ...win, events: [] } : win
+      const seenKey = JSON.stringify({ ...seen, alive: 0 })
+      if (force || seenKey !== seenWritten.key || now - seenWritten.at >= T.power.windowHeartbeatSeconds * 1000 * slow) {
+        await $.fs.write(seenPath(sid), JSON.stringify(seen))
+        seenWritten = { key: seenKey, at: now }
+      }
 
       // Mods cannot delete files, so old session files stay; only recently written ones are read.
       // A listing that fails says nothing about who is gone: nothing is forgotten on that tick.
@@ -254,6 +280,7 @@ export const register: Register = (on, options) => {
       // An outdated window that cannot read a pet a newer version wrote goes on showing the last one it read, never
       // owning it, so its pane still says to restart.
       const p = (await readPet().catch(err => { if (outdated && pet) return pet; throw err })) ?? newEgg(now)
+      const before = visible(p)
       if (unchecked !== null) {
         const base = unchecked
         const applied = p.applied[sid]
@@ -297,7 +324,13 @@ export const register: Register = (on, options) => {
         }
         const kept = p.dead && now - p.dead.at > T.death.newEggSeconds * 1000 ? { ...newEgg(now, p.life + 1), applied: p.applied } : p
         // Known limit: the previous owner may write one more tick after ownership moves; fine while a tick is 3 seconds.
-        await writeSafe(petPath, kept)
+        // The pet is written when anything it shows changed, a window closes, or at the heartbeat. Skipping loses
+        // nothing: the pet is lived from the time it was written, so the next tick, here or in another window, lives
+        // the same time again from the file.
+        if (force || kept !== p || visible(kept) !== before || now - petWrittenAt >= T.power.petHeartbeatSeconds * 1000 * slow) {
+          await writeSafe(petPath, kept)
+          petWrittenAt = now
+        }
         pet = kept
       } else pet = p
 
@@ -310,8 +343,8 @@ export const register: Register = (on, options) => {
     // a pet that does not read, which waits for the owner, reaches the transcript; anything else goes on trying and is
     // said in the debug log alone.
     let failures = 0
-    const tick = (action?: (p: Pet, now: number) => void) =>
-      (busy = busy.then(() => tickNow(action)).then(() => { failures = 0 }, err => {
+    const tick = (action?: (p: Pet, now: number) => void, force = false) =>
+      (busy = busy.then(() => tickNow(action, force)).then(() => { failures = 0 }, err => {
         failures += 1
         if (failures !== 3) return
         // An outdated window may only fail to read a pet a newer version wrote: it is told to restart, not to delete it.
@@ -336,15 +369,23 @@ export const register: Register = (on, options) => {
         touch(await $.clock.now())
         return tick(action)
       },
-      flush: () => tick(),
+      // A closing window writes its file and, if it owns it, the pet, whatever the heartbeats.
+      flush: () => tick(undefined, true),
     }
 
     await $.command.register({ name: 'hd', description: tr().command, argumentHint: '[stats]' })
     void $.ui.open({ id: PANE, title: NAME, columns: PANE_COLUMNS })
     $.clock.every(T.presence.tickSeconds * 1000, () => { void tick() })
+    // Two frames a second while the pet moves, one on battery; while it holds still, a frame is drawn only when the
+    // scene or the pane's width changes it.
+    let half = false, blitted = ''
     $.clock.every(500, () => {
-      frame += 1
-      void $.ui.blit({ requestId: PANE, key: 'lcd', cells: frameCells(shown.scene, shown.night) }).catch(() => {})
+      if (onBattery && (half = !half)) return
+      if (animating) frame += 1
+      const cells = frameCells(shown.scene, shown.night)
+      if (!animating && lastFrame.key === blitted) return
+      blitted = lastFrame.key
+      void $.ui.blit({ requestId: PANE, key: 'lcd', cells }).catch(() => {})
     })
     void tick()
     return next(e)

@@ -35,6 +35,10 @@ export const tuning = {
   poop: { everyAwakeHours: 3, max: 4, healthPerHourEach: 3 },
   idle: { playAlone: 15, bored: 60, nap: 180 }, // minutes
   presence: { tickSeconds: 3, staleAfterMinutes: 2, forgetAfterDays: 1 },
+  // What runs, and how often: the animation only while the pane is shown and the window was used lately; a window file
+  // when it changes, else at its heartbeat; the pet when something visible changes, else at its heartbeat. On battery
+  // the animation runs at half the rate and both heartbeats double.
+  power: { animateMinutes: 10, windowHeartbeatSeconds: 15, petHeartbeatSeconds: 30, batteryCheckMinutes: 5 },
   death: { starveHours: 12, newEggSeconds: 60 },
   notify: { quietMinutes: 1 }, // notify only after this many minutes without input
 }
