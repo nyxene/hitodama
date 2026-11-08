@@ -1134,16 +1134,27 @@ const statsPet = () => {
     { n: 2, ch: 'kappa', path: [], from: T0 - 40 * day, to: T0 - 34 * day, days: 6, cause: 'starve' },
     { n: 1, ch: 'kitsune', path: [], from: T0 - 50 * day, to: T0 - 46 * day, days: 4, cause: 'sick' },
   ]
-  return { p, rows: () => statsRows(p, { lives, seen: ['hitodama', 'kitsune'] }, p.at) }
+  // Ten lives with two-digit numbers, every character and every cause, up to the longest life.
+  const many = Object.keys(CHARS).slice(0, 10).map((ch, i) => (
+    { n: 21 - i, ch, path: [], from: T0 - (i + 30) * day, to: T0 - (i + 9) * day, days: 21, cause: ['old', 'starve', 'sick'][i % 3]! }))
+  return {
+    p,
+    rows: () => statsRows(p, { lives, seen: ['hitodama', 'kitsune'] }, p.at),
+    all: () => statsRows(p, { lives: many, seen: [] }, p.at),
+  }
 }
 
+test('an indented line counts its indent when rows are counted', () => {
+  expect([wrapRows('    abcdefghijklmnopq', 20), wrapRows('    abcdefghijklmnop', 20), wrapRows('  ab cd', 6)]).toEqual([2, 1, 2])
+})
+
 test('the statistics fit the pane at any width in every language, a name or "3 d" never split', () => {
-  const { rows } = statsPet()
+  const { rows, all } = statsPet()
   for (const l of LANGS) {
     setLang(l)
-    for (const w of [32, 40, 64]) {
-      const lines = layoutStats(rows(), w)
-      for (const line of lines) expect([l, w, line, wrapRows(line, w)]).toEqual([l, w, line, 1])
+    for (const w of [32, 33, 36, 40, 48, 64]) {
+      const lines = [...layoutStats(rows(), w), ...layoutStats(all(), w)]
+      for (const line of lines) expect([l, w, line, width(line) <= w, wrapRows(line, w)]).toEqual([l, w, line, true, 1])
       // A collection row starts with a name and never ends on its mark.
       for (const line of lines.filter(x => /[●○]/.test(x))) expect(/^[●○] \S/.test(line) && !/[●○]$/.test(line)).toBe(true)
     }

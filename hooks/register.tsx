@@ -12,7 +12,7 @@ import { bar, busy as isBusy, decide, lastActive, layoutStats, limitOf, newer, p
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
 const BLANK: HitodamaView = { mode: 'care', title: NAME, call: false, room: '', msg: '', bars: [], stats: [], log: [], meta: '' }
-const view = atom({ plugin: 'hitodama', key: 'view' } as const, BLANK, { shape: 'view-2' })
+const view = atom({ plugin: 'hitodama', key: 'view' } as const, BLANK, { shape: 'view-3' })
 const PANE_COLUMNS = T.screen.maxCols + 2 // the dock opens as wide as the widest screen
 
 type Press = Act | 'stats' | 'left' | 'right' | 'quit'

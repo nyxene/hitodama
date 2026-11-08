@@ -133,12 +133,14 @@ export function title(p: Pet, now: number): string {
 export function wrapRows(s: string, w: number): number {
   w = Math.max(1, w)
   return s.split('\n').reduce((rows, line) => {
-    let n = 1, x = 0
-    for (const word of line.split(' ')) {
-      const k = width(word)
+    // Leading spaces, an indent, take their columns on the first row.
+    const text = line.trimStart()
+    let n = 1, x = Math.min(line.length - text.length, w)
+    for (const [i, word] of text.split(' ').entries()) {
+      const k = width(word), gap = i > 0 ? 1 : 0
       if (k <= w) {
-        if (x > 0 && x + 1 + k > w) { n += 1; x = 0 }
-        x += (x > 0 ? 1 : 0) + k
+        if (x > 0 && x + gap + k > w) { n += 1; x = 0 }
+        x += (x > 0 ? gap : 0) + k
         continue
       }
       if (x > 0) { n += 1; x = 0 }
@@ -231,7 +233,8 @@ export function layoutStats(rows: StatsRow[], w: number): string[] {
       if (two.every(l => width(l) <= w)) return two
       // One to a row, three columns apart, closer where the pane is narrower.
       const one = (gap: number) => table(r.pairs.flatMap(([a, av, b, bv]) => [[a!, av!], [b!, bv!]]), [1], gap)
-      return [3, 2].map(one).find(t => t.every(l => width(l) <= w)) ?? one(1)
+      // Narrower still, each value goes under its label.
+      return [3, 2, 1].map(one).find(t => t.every(l => width(l) <= w)) ?? r.pairs.flatMap(([a, av, b, bv]) => [a!, `  ${av}`, b!, `  ${bv}`])
     }
     if ('grid' in r) {
       const cell = Math.max(...r.grid.map(width)) + 2, per = Math.max(1, Math.floor((w + 2) / cell)), out: string[] = []
@@ -241,7 +244,10 @@ export function layoutStats(rows: StatsRow[], w: number): string[] {
     const wide = table(r.lives, [4])
     if (wide.every(l => width(l) <= w)) return wide
     const indent = ' '.repeat(Math.max(...r.lives.map(l => width(l[0]!))) + 2)
-    return table(r.lives.map(([n, , name, cause, days]) => [n!, name!, cause!, days!]), [3]).flatMap((l, i) => [l, indent + r.lives[i]![1]])
+    const narrow = table(r.lives.map(([n, , name, cause, days]) => [n!, name!, cause!, days!]), [3]).flatMap((l, i) => [l, indent + r.lives[i]![1]])
+    if (narrow.every(l => width(l) <= w)) return narrow
+    // Narrower still, the cause goes on a row of its own too.
+    return table(r.lives.map(([n, , name, , days]) => [n!, name!, days!]), [2]).flatMap((l, i) => [l, indent + r.lives[i]![1], indent + r.lives[i]![3]])
   })
 }
 
