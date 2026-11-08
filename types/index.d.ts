@@ -6,7 +6,8 @@ export type HitodamaView = {
   room: string
   msg: string
   bars: string[] // fullness, energy, mood, health, discipline, window load
-  stats: string[]
+  // The statistics, laid out at the pane's width: a text line, label-value pairs, a collection's names, the memorial.
+  stats: (string | { pairs: string[][] } | { grid: string[] } | { lives: string[][] })[]
   log: string[] // newest first
   meta: string
 }

@@ -7,7 +7,7 @@ import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHisto
 import { cells, colorOf, scene, screenRows, W, type Detail } from './sprites'
 import { tuning as T } from './tuning'
 import { VERSION } from './version'
-import { bar, busy as isBusy, decide, lastActive, limitOf, newer, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Limit, type LimitKind, type Win } from './view'
+import { bar, busy as isBusy, decide, lastActive, layoutStats, limitOf, newer, paceOf, restFrom, statsRows, statsText, title, wrapRows, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -205,7 +205,7 @@ export const register: Register = (on, options) => {
         room: win.room,
         msg: d.msg,
         bars: [bar(B.sat, p.sat), bar(B.en, p.en), bar(B.joy, p.joy), bar(B.hp, p.hp), bar(B.disc, p.disc), bar(B.load, win.load)],
-        stats: statsOpen ? statsText(p, history, now).split('\n') : [],
+        stats: statsOpen ? statsRows(p, history, now) : [],
         log: [...(p.log ?? [])].reverse().map(l => `${hhmm(l.t)}  ${l.text}`),
         meta: tr().meta(win.model, win.effort, win.agents,
           limit.limitKind ? tr().limitLine(Math.round(limit.limit), limit.limitKind === 'seven_day') : '', p.weight, p.cm),
@@ -515,7 +515,7 @@ export const register: Register = (on, options) => {
       return rowsUsed
     }
     const textRows = (w: number, meta = true, compact = false) => lines(v.msg, w)
-      + (v.mode === 'stats' ? v.stats.reduce((n, l) => n + lines(l, w), 0)
+      + (v.mode === 'stats' ? layoutStats(v.stats, w).reduce((n, l) => n + lines(l, w), 0)
         : (compact ? lines(compactLine, w) : barsAt(w).length) + (meta ? lines(v.meta, w) : 0))
       + buttonRows(w)
     // The layout the pane's size allows, with the screen as wide as fits, 32 to maxCols columns: on top with
@@ -548,7 +548,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" width={layout === 'side' ? sideW : undefined}>
         <Text>{v.msg}</Text>
         {v.mode === 'stats'
-          ? v.stats.map(l => <Text>{l || ' '}</Text>)
+          ? layoutStats(v.stats, textW).map(l => <Text>{l || ' '}</Text>)
           : compact
             ? <Text>{compactLine}</Text>
             : barsAt(textW).map(g => <Text wrap="truncate-end">{g.map((i, k) => (k ? <Text>{"   "}{barEl(i)}</Text> : barEl(i)))}</Text>)}

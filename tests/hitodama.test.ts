@@ -1,13 +1,13 @@
 import type { On } from 'claude-code'
 import { expect, test as kitTest, type Engine, type TestBody } from 'claude-code/testing'
 
-import { LANGS, langFrom, setLang, t as tr } from '../hooks/i18n'
+import { LANGS, langFrom, setLang, t as tr, width } from '../hooks/i18n'
 import { CHARS } from '../hooks/lines'
 import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
 import { cells, colorOf, scene, screenRows, type ScreenLook } from '../hooks/sprites'
 import { tuning as T } from '../hooks/tuning'
 import { VERSION } from '../hooks/version'
-import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Win } from '../hooks/view'
+import { bar, decide, lastActive, layoutStats, limitOf, paceOf, restFrom, statsRows, statsText, title, wrapRows, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
 const T0 = Date.UTC(2026, 9, 24, 12) // noon UTC
@@ -1122,6 +1122,67 @@ test('a limit with no reset time lasts one span of that limit from when it was m
 test('the five-hour limit of any window comes before the weekly one', () => {
   const wins: Win[] = [{ ...win, limit: 100, limitKind: 'seven_day', limitAt: T0 }, { ...win, limit: 30, limitKind: 'five_hour', limitAt: T0 }]
   expect(limitOf(wins, T0)).toEqual({ limit: 30, limitKind: 'five_hour', limitResetsAt: undefined })
+})
+
+// A pet with a turn on record and three past lives, so every part of the statistics shows.
+const statsPet = () => {
+  const p = child()
+  p.stats = { ...p.stats, turns: 672, nightTurns: 284, tokens: 3_976_795, models: { 'claude-opus-5-5': 620 }, efforts: { high: 600 }, maxLoad: 96 }
+  const day = 86_400_000
+  const lives = [
+    { n: 3, ch: 'tengu', path: [], from: T0 - 30 * day, to: T0 - 17 * day, days: 13, cause: 'old' },
+    { n: 2, ch: 'kappa', path: [], from: T0 - 40 * day, to: T0 - 34 * day, days: 6, cause: 'starve' },
+    { n: 1, ch: 'kitsune', path: [], from: T0 - 50 * day, to: T0 - 46 * day, days: 4, cause: 'sick' },
+  ]
+  return { p, rows: () => statsRows(p, { lives, seen: ['hitodama', 'kitsune'] }, p.at) }
+}
+
+test('the statistics fit the pane at any width in every language, a name or "3 d" never split', () => {
+  const { rows } = statsPet()
+  for (const l of LANGS) {
+    setLang(l)
+    for (const w of [32, 40, 64]) {
+      const lines = layoutStats(rows(), w)
+      for (const line of lines) expect([l, w, line, wrapRows(line, w)]).toEqual([l, w, line, 1])
+      // A collection row starts with a name and never ends on its mark.
+      for (const line of lines.filter(x => /[●○]/.test(x))) expect(/^[●○] \S/.test(line) && !/[●○]$/.test(line)).toBe(true)
+    }
+  }
+  setLang('en')
+})
+
+test('the statistics go two pairs to a row in a wide pane and one in a narrow one, values right-aligned', () => {
+  setLang('en')
+  const { rows } = statsPet()
+  const pairsAt = (w: number) => layoutStats(rows().filter(r => typeof r === 'object' && 'pairs' in r), w)
+  const wide = pairsAt(64), narrow = pairsAt(40)
+  expect([wide.length, narrow.length]).toEqual([7, 14])
+  // Right-aligned values end every row of a block in the same column.
+  for (const block of [wide, narrow]) expect(new Set(block.map(width)).size).toBe(1)
+  expect(narrow.find(x => x.startsWith(tr().stat.tokens))!.endsWith('3,976,795')).toBe(true)
+  expect(wide.at(-1)!.startsWith(tr().stat.tokens)).toBe(true)
+})
+
+test('the statistics in a 40-column pane keep each value on its label\'s row', async ($, on) => {
+  const { p } = statsPet()
+  await session($, on, { 'pet.json': JSON.stringify(p) })
+  let ui = await pane($, 'terminal', 40, 80)
+  await ui.press({ key: 'b-stats' })
+  await ui.unmount()
+  ui = await pane($, 'terminal', 40, 80)
+  // The right-hand label of a wide row starts a row of its own, its value at the end.
+  expect((await ui.find({ type: 'Text', text: new RegExp(`^${tr().stat.dm}`) }))?.text).toMatch(/ \d+$/)
+  expect((await ui.find({ type: 'Text', text: new RegExp(`^${tr().stat.tokens}`) }))?.text).toMatch(/ 3,976,795$/)
+  await ui.unmount()
+})
+
+test('the memorial is a table, with the dates on a row of their own when it does not fit', () => {
+  const { rows } = statsPet()
+  const lives = (w: number) => layoutStats(rows().filter(r => typeof r === 'object' && 'lives' in r), w)
+  const wide = lives(64), narrow = lives(32)
+  expect([wide.length, narrow.length]).toEqual([3, 6])
+  expect(new Set(wide.map(width)).size).toBe(1)
+  expect(narrow[1]!.trim()).toMatch(/–/)
 })
 
 test('every label keeps a space before its value in every language', () => {
