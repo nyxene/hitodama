@@ -749,14 +749,51 @@ test('a window on an older version than a live one leaves the pet to it, and onl
   await ui.unmount()
 })
 
-for (const v of ['0.0.1', undefined]) {
-  test(`a window on ${v ? 'an older version' : 'no version (0.5.2 and before)'} takes part as before, and this one records its own`, async ($, on) => {
-    const s = await session($, on, { 'pet.json': JSON.stringify(child()), 'seen/s2.json': JSON.stringify({ ...win, sid: 's2', alive: T0 + HOUR, v }) })
-    await s.hd()
-    expect(s.writes['pet.json']).toBeDefined()
-    expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).v).toBe(VERSION)
-  })
+// How many times this window writes the pet over three ticks, after two to settle, with these other windows live.
+async function petWrites($: Engine, on: On, others: Partial<Win>[]) {
+  const files: Record<string, string> = { 'pet.json': JSON.stringify(child()) }
+  others.forEach((o, i) => { files[`seen/s${i + 2}.json`] = JSON.stringify({ ...win, sid: `s${i + 2}`, alive: T0 + HOUR, ...o }) })
+  const s = await session($, on, files)
+  await s.hd()
+  await s.hd()
+  const before = s.order.filter(f => f === 'pet.json').length
+  for (let i = 0; i < 3; i++) await s.hd()
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).v).toBe(VERSION)
+  return s.order.filter(f => f === 'pet.json').length - before
 }
+
+// The other window was used last, so by input alone it would own the pet.
+test('a window used last but on an older version leaves the pet to this one', async ($, on) => {
+  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '0.0.1' }])).toBe(3)
+})
+
+test('a window used last that records no version (0.5.2 and before) keeps the pet, as it chooses itself', async ($, on) => {
+  expect(await petWrites($, on, [{ lastInput: T0 + HOUR }])).toBe(0)
+})
+
+// An outdated window and one of 0.5.2, both used after this one; the old one picks the outdated one (first by session
+// id) and so writes nothing: this one must write.
+test('with an outdated window used last and an old one beside it, the newest window still looks after the pet', async ($, on) => {
+  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '0.0.1' }, { lastInput: T0 + HOUR }])).toBe(3)
+})
+
+test('a version that is not plain numbers counts as none, and never reaches the pane', async ($, on) => {
+  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '9.\u001b[31mX\u0007' }])).toBe(0)
+  const ui = await pane($, 'terminal', 70, 60)
+  expect(all(await ui.drawn()).flatMap(e => [e.children].flat(9)).join(' ')).not.toContain('\u001b')
+  await ui.unmount()
+})
+
+test('with no home folder the mod says once what to set, and writes nothing', async ($, on) => {
+  const logs: string[] = [], writes: string[] = []
+  on('session.id', () => ({ value: 's1' }))
+  on('env.get', () => ({ value: undefined }))
+  on('ui.log', (_, e) => { logs.push(e.text); return { value: undefined } })
+  on('fs.write', (_, e) => { writes.push(e.path); return { value: undefined } })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  expect([logs, writes]).toEqual([[tr().noHome], []])
+})
 test('a pet file cut off mid-write gives way to the spare copy, and the pet goes on without a word', async ($, on) => {
   const p = child()
   const s = await session($, on, { 'pet.json': JSON.stringify(p).slice(0, -1), 'pet.prev.json': JSON.stringify(p) })

@@ -43,7 +43,7 @@ claude plugin install hitodama --marketplace nyxene/hitodama
 
 The pane opens on the next session start. `/hd` opens it any time, `/hd stats` prints the pet's statistics, collection and memorial.
 
-After an update, restart every open window (`/exit`, then `claude --continue`): a window keeps the version it started with. One still on an older version than another open window leaves the pet to the newer ones, and its pane says so.
+After an update, restart every open window (`/exit`, then the `claude --resume` command it prints): a window keeps the version it started with. From 0.5.3 on, one still on an older version than another open window leaves the pet to the newer ones, and its pane says so; windows of 0.5.2 and before cannot tell.
 
 ## Requirements
 

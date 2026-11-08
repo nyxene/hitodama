@@ -118,6 +118,9 @@ export const register: Register = (on, options) => {
     }
     dir = `${home}/.claude/hitodama`
     const seenPath = (id: string) => `${dir}/seen/${id}.json`
+    // Another window's version, counted only as plain "major.minor.patch": anything else, which the pane could not draw,
+    // is no version.
+    const versionOf = (v: unknown) => (typeof v === 'string' && /^\d{1,9}\.\d{1,9}\.\d{1,9}$/.test(v) ? v : undefined)
     // Another window's room name, as the pane shows it: a short single line, whatever its file holds.
     const roomOf = (room: unknown) => [...String(room ?? '').slice(0, 64)].map(ch => { const c = ch.codePointAt(0)!; return c < 32 || (c >= 127 && c < 160) || (c >= 0x200b && c <= 0x200f) || c === 0x2028 || c === 0x2029 ? ' ' : ch }).join('')
     const readJson = async <V,>(path: string): Promise<V | null> => {
@@ -232,17 +235,20 @@ export const register: Register = (on, options) => {
       // A window that has just closed (alive 0) no longer counts, but its last events are still applied.
       const written = (await Promise.all(recent.map(async f => ({ name: f.name, w: await readJson<Win>(`${dir}/seen/${f.name}`) }))))
         .flatMap(({ name, w }) => w && typeof w.sid === 'string' && name === `${w.sid}.json`
-          ? [{ ...w, room: roomOf(w.room), lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
+          ? [{ ...w, room: roomOf(w.room), lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now), v: versionOf(w.v) }] : [])
       const others = written.filter(w => now - w.alive < T.presence.staleAfterMinutes * 60_000)
       const fresh = [win, ...others]
       followed = limitOf(fresh, now)
       const active = lastActive(fresh, now)
       // A window on an older version than another live one leaves the pet to the newer ones, never owning it. Windows
-      // of 0.5.2 and before record no version and take part as before: they cannot know, and would write it anyway.
-      const latest = fresh.reduce((m, w) => (typeof w.v === 'string' && newer(w.v, m) ? w.v : m), VERSION)
+      // of 0.5.2 and before record no version and choose as before, by input over all windows: the owner is that
+      // choice, unless it fell on an outdated window, which gives way to the newest one by input. So every window,
+      // old or new, sees one owner, and only one writes.
+      const latest = fresh.reduce((m, w) => (w.v && newer(w.v, m) ? w.v : m), VERSION)
       outdated = latest !== VERSION ? latest : null
-      const current = fresh.filter(w => !(typeof w.v === 'string' && newer(latest, w.v)))
-      const owner = [...current].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
+      const pick = (ws: Win[]) => [...ws].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
+      const first = pick(fresh)
+      const owner = first.v && newer(latest, first.v) ? pick(fresh.filter(w => w.v === latest)) : first
       const isOwner = owner.sid === sid
 
       const p = (await readPet()) ?? newEgg(now)
@@ -306,7 +312,8 @@ export const register: Register = (on, options) => {
       (busy = busy.then(() => tickNow(action)).then(() => { failures = 0 }, err => {
         failures += 1
         if (failures !== 3) return
-        if (err instanceof Error && err.name === 'unreadable') $.ui.log(err.message)
+        // An outdated window may only fail to read a pet a newer version wrote: it is told to restart, not to delete it.
+        if (err instanceof Error && err.name === 'unreadable') { if (!outdated) $.ui.log(err.message) }
         else $.ui.log(tr().stuck(err instanceof Error ? err.message : String(err)), { to: 'debug' })
       }))
 
