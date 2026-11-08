@@ -124,8 +124,8 @@ export const register: Register = (on, options) => {
     }
     // Mods cannot rename files, so a write can be cut short (a window closing, a second writer). The pet and the
     // history are written to a spare copy first, then to their own file. One that is there but does not read gives
-    // way to its spare copy, written just before it, and the line says so once, unless it was only the start of the
-    // spare copy: a read while another window writes, a write cut short or a failed read, with nothing lost.
+    // way to its spare copy, written just before it, without a word: with many windows that is mostly a read while
+    // another window writes, nothing a window wrote is lost, and the next write puts the file right.
     const spareOf = (path: string) => path.replace(/\.json$/, '.prev.json')
     const readText = (path: string) => $.fs.read(path).catch(() => '')
     const parse = (text: string): unknown => { try { return JSON.parse(text) } catch { return null } }
@@ -134,21 +134,13 @@ export const register: Register = (on, options) => {
       await $.fs.write(spareOf(path), text)
       await $.fs.write(path, text)
     }
-    const told = new Set<string>()
     // The file when it reads, else its spare copy when that reads; null when the file is gone or neither reads.
     const readSafe = async <V,>(path: string, ok: (v: unknown) => v is V): Promise<V | null> => {
       if (!(await $.fs.exists(path))) return null
-      const text = await readText(path)
-      const v = parse(text)
-      if (ok(v)) { told.delete(path); return v }
-      const spareText = await readText(spareOf(path))
-      const spare = parse(spareText)
-      if (!ok(spare)) return null
-      if (!spareText.startsWith(text) && !told.has(path)) {
-        told.add(path)
-        $.ui.log(`hitodama: ${path} did not read; went on from ${spareOf(path)}, written just before it`)
-      }
-      return spare
+      const v = parse(await readText(path))
+      if (ok(v)) return v
+      const spare = parse(await readText(spareOf(path)))
+      return ok(spare) ? spare : null
     }
     const historyPath = `${dir}/history.json`
     // A history that is there but does not read, nor its spare copy, is null and not written over: a death or a new
