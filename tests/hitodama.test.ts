@@ -733,7 +733,7 @@ test('a pet file cut off mid-write gives way to the spare copy, and the pet goes
   const saved = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
   expect(saved.ch).toBe(p.ch)
   expect(saved.at).toBeGreaterThan(p.at)
-  expect(s.logs.filter(l => l.includes('pet.prev.json'))).toEqual([]) // the spare copy holds that text whole
+  expect(s.logs.filter(l => l.includes('pet'))).toEqual([])
 })
 
 // The start of an older state: another window wrote a newer one to the spare copy between this window's two reads.
