@@ -251,7 +251,9 @@ export const register: Register = (on, options) => {
       const owner = first.v && newer(latest, first.v) ? pick(fresh.filter(w => w.v === latest)) : first
       const isOwner = owner.sid === sid
 
-      const p = (await readPet()) ?? newEgg(now)
+      // An outdated window that cannot read a pet a newer version wrote goes on showing the last one it read, never
+      // owning it, so its pane still says to restart.
+      const p = (await readPet().catch(err => { if (outdated && pet) return pet; throw err })) ?? newEgg(now)
       if (unchecked !== null) {
         const base = unchecked
         const applied = p.applied[sid]

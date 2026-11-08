@@ -749,6 +749,19 @@ test('a window on an older version than a live one leaves the pet to it, and onl
   await ui.unmount()
 })
 
+test('an outdated window that cannot read a newer pet keeps the last one on its pane, still saying to restart', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.hd()
+  // A newer window starts and writes the pet in a form this version does not read, on the same tick.
+  s.files['seen/s2.json'] = JSON.stringify({ ...win, sid: 's2', room: 'astro', alive: T0 + HOUR, v: '99.0.0' })
+  s.files['pet.json'] = '{"v":99,"format":"new"}'
+  for (let i = 0; i < 4; i++) await s.hd()
+  expect(s.logs).toEqual([])
+  const ui = await pane($, 'terminal', 70, 60)
+  expect(all(await ui.drawn()).flatMap(e => [e.children].flat(9)).join(' ')).toContain('99.0.0')
+  await ui.unmount()
+})
+
 // How many times this window writes the pet over three ticks, after two to settle, with these other windows live.
 async function petWrites($: Engine, on: On, others: Partial<Win>[]) {
   const files: Record<string, string> = { 'pet.json': JSON.stringify(child()) }
