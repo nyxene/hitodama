@@ -6,7 +6,8 @@ import { LANGS, langFrom, setLang, t as tr, width, type Lang } from './i18n'
 import { act, advance, applyEvent, bury, canPlay, causeText, finishGame, isHistory, isPet, nameOf, newEgg, note, remember, turnCost, type Act, type Ev, type History, type Pet } from './sim'
 import { cells, colorOf, scene, screenRows, W, type Detail } from './sprites'
 import { tuning as T } from './tuning'
-import { bar, busy as isBusy, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Limit, type LimitKind, type Win } from './view'
+import { VERSION } from './version'
+import { bar, busy as isBusy, decide, lastActive, limitOf, newer, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Limit, type LimitKind, type Win } from './view'
 
 const NAME = 'Hitodama'
 const PANE = 'hitodama'
@@ -23,7 +24,7 @@ export const register: Register = (on, options) => {
   setLang(auto ? 'en' : options.language)
   const follow = (claude: unknown) => { if (auto) setLang(langFrom(claude) ?? 'en') }
   // Each window keeps itself in seen/<session>.json, so other windows see it and it survives a mod reload.
-  let win: Win = { sid: '', room: '', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'medium', turn: false, agents: 0, errors: 0, limit: 0, seq: 0, events: [] }
+  let win: Win = { sid: '', room: '', alive: 0, lastInput: 0, lastActivity: 0, typingAt: 0, load: 0, model: '', effort: 'medium', turn: false, agents: 0, errors: 0, limit: 0, seq: 0, events: [], v: VERSION }
   let pet: Pet | null = null
   let history: History = { lives: [], seen: [] }
   let anim: Ctx['anim'] = null
@@ -112,11 +113,14 @@ export const register: Register = (on, options) => {
     const absolute = (p?: string) => (p && (p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)) ? p : undefined)
     const home = absolute(await $.env.get('HOME')) ?? absolute(await $.env.get('USERPROFILE'))
     if (!home) {
-      $.ui.log('hitodama: neither HOME nor USERPROFILE is an absolute path, the pet stays away')
+      $.ui.log(tr().noHome)
       return next(e)
     }
     dir = `${home}/.claude/hitodama`
     const seenPath = (id: string) => `${dir}/seen/${id}.json`
+    // Another window's version, counted only as plain "major.minor.patch": anything else, which the pane could not draw,
+    // is no version.
+    const versionOf = (v: unknown) => (typeof v === 'string' && /^\d{1,9}\.\d{1,9}\.\d{1,9}$/.test(v) ? v : undefined)
     // Another window's room name, as the pane shows it: a short single line, whatever its file holds.
     const roomOf = (room: unknown) => [...String(room ?? '').slice(0, 64)].map(ch => { const c = ch.codePointAt(0)!; return c < 32 || (c >= 127 && c < 160) || (c >= 0x200b && c <= 0x200f) || c === 0x2028 || c === 0x2029 ? ' ' : ch }).join('')
     const readJson = async <V,>(path: string): Promise<V | null> => {
@@ -152,7 +156,8 @@ export const register: Register = (on, options) => {
     const readPet = async (): Promise<Pet | null> => {
       if (!(await $.fs.exists(petPath))) return null
       const p = await readSafe(petPath, isPet)
-      if (!p) throw new Error(`${petPath} does not read as a pet, nor does ${spareOf(petPath)}; they are kept as they are until one reads again, is fixed or ${petPath} is removed`)
+      // Its message is the line the owner reads, in the pet's language.
+      if (!p) throw Object.assign(new Error(tr().unreadable(petPath)), { name: 'unreadable' })
       return p
     }
     // date from /bin, then /usr/bin, then PATH (NixOS), each only when the one before gave no offset; else the
@@ -171,6 +176,8 @@ export const register: Register = (on, options) => {
     }
     let roomCheckedAt = 0
     let busy = Promise.resolve()
+    // The newer version a live window runs while this one runs an older one; the pane says so, the transcript does not.
+    let outdated: string | null = null
 
     // active: when any window was last active, as the tick found it. asking: the rooms of other windows where Claude
     // asked for permission.
@@ -182,7 +189,8 @@ export const register: Register = (on, options) => {
         ...limit, now, isOwner, ownerRoom, anim, asking,
         idleMin: (now - active) / 60_000,
       }
-      const d = game && isOwner && !asking.length ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
+      const shownNow = game && isOwner && !asking.length ? { scene: 'game', msg: tr().gameRound(game.wins.length + 1) } : decide(p, win, ctx)
+      const d = outdated ? { ...shownNow, msg: tr().outdated(outdated, VERSION) } : shownNow
       const night = p.asleep && isOwner
       shown = { scene: d.scene, night }
       const hhmm = (t: number) => {
@@ -227,15 +235,25 @@ export const register: Register = (on, options) => {
       // A window that has just closed (alive 0) no longer counts, but its last events are still applied.
       const written = (await Promise.all(recent.map(async f => ({ name: f.name, w: await readJson<Win>(`${dir}/seen/${f.name}`) }))))
         .flatMap(({ name, w }) => w && typeof w.sid === 'string' && name === `${w.sid}.json`
-          ? [{ ...w, room: roomOf(w.room), lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now) }] : [])
+          ? [{ ...w, room: roomOf(w.room), lastInput: Math.min(w.lastInput, now), lastActivity: Math.min(w.lastActivity, now), v: versionOf(w.v) }] : [])
       const others = written.filter(w => now - w.alive < T.presence.staleAfterMinutes * 60_000)
       const fresh = [win, ...others]
       followed = limitOf(fresh, now)
       const active = lastActive(fresh, now)
-      const owner = [...fresh].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
+      // A window on an older version than another live one leaves the pet to the newer ones, never owning it. Windows
+      // of 0.5.2 and before record no version and choose as before, by input over all windows: the owner is that
+      // choice, unless it fell on an outdated window, which gives way to the newest one by input. So every window,
+      // old or new, sees one owner, and only one writes.
+      const latest = fresh.reduce((m, w) => (w.v && newer(w.v, m) ? w.v : m), VERSION)
+      outdated = latest !== VERSION ? latest : null
+      const pick = (ws: Win[]) => [...ws].sort((a, b) => b.lastInput - a.lastInput || a.sid.localeCompare(b.sid))[0]!
+      const first = pick(fresh)
+      const owner = first.v && newer(latest, first.v) ? pick(fresh.filter(w => w.v === latest)) : first
       const isOwner = owner.sid === sid
 
-      const p = (await readPet()) ?? newEgg(now)
+      // An outdated window that cannot read a pet a newer version wrote goes on showing the last one it read, never
+      // owning it, so its pane still says to restart.
+      const p = (await readPet().catch(err => { if (outdated && pet) return pet; throw err })) ?? newEgg(now)
       if (unchecked !== null) {
         const base = unchecked
         const applied = p.applied[sid]
@@ -288,12 +306,17 @@ export const register: Register = (on, options) => {
       await refresh(now, isOwner, owner.room, active, [...new Set(others.filter(w => (w.asking ?? 0) > 0).map(w => w.room))])
     }
     // Timer ticks and presses run one at a time so files are never read and written in a race.
-    // A tick can fail once in passing (a file read while another window writes it); three in a row are said once.
+    // A tick can fail once in passing (a file read while another window writes it); three in a row are said once. Only
+    // a pet that does not read, which waits for the owner, reaches the transcript; anything else goes on trying and is
+    // said in the debug log alone.
     let failures = 0
     const tick = (action?: (p: Pet, now: number) => void) =>
       (busy = busy.then(() => tickNow(action)).then(() => { failures = 0 }, err => {
         failures += 1
-        if (failures === 3) $.ui.log(`hitodama: ticks are skipped: ${String(err)}`)
+        if (failures !== 3) return
+        // An outdated window may only fail to read a pet a newer version wrote: it is told to restart, not to delete it.
+        if (err instanceof Error && err.name === 'unreadable') { if (!outdated) $.ui.log(err.message) }
+        else $.ui.log(tr().stuck(err instanceof Error ? err.message : String(err)), { to: 'debug' })
       }))
 
     const kept = await readJson<Win>(seenPath(sid))
@@ -302,7 +325,7 @@ export const register: Register = (on, options) => {
     const saved = await readPet().catch(() => undefined)
     const known = saved === undefined || saved?.applied[sid] !== undefined
     // A resumed session's turn and helpers died with its old process, and their ends never come.
-    win = { ...win, ...kept, sid, turn: false, agents: 0, asking: 0, ...(known ? {} : { events: [] }) }
+    win = { ...win, ...kept, sid, v: VERSION, turn: false, agents: 0, asking: 0, ...(known ? {} : { events: [] }) }
     // A window file cut short reads as none and would number events from 0, below what the pet has already applied,
     // so they would be dropped: numbering goes on from there.
     win.seq = Math.max(win.seq, saved?.applied[sid] ?? 0)

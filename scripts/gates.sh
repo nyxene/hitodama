@@ -12,6 +12,9 @@ sh scripts/privacy.sh
 # The gh hook must refuse a private link (built at run time, so the tree holds none) in the text and in a posted
 # file however it is named, and pass a clean command.
 command -v jq >/dev/null || { echo "gates: jq is required, the privacy hook checks nothing without it" >&2; exit 1; }
+# The version a window records must be the plugin's, or windows would take each other for outdated.
+version=$(jq -r .version .claude-plugin/plugin.json)
+grep -q "VERSION = '$version'" hooks/version.ts || { echo "gates: hooks/version.ts does not say $version, as plugin.json does" >&2; exit 1; }
 hook() { jq -n -c --arg c "gh $1" '{tool_input: {command: $c}}' | sh scripts/privacy-hook.sh 2>/dev/null; }
 kind=code
 posted=$(mktemp)

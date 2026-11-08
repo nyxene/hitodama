@@ -11,6 +11,7 @@ export type Win = {
   limit: number; limitKind?: LimitKind; limitResetsAt?: string; limitAt?: number
   seq: number; events: Ev[]
   asking?: number // when Claude Code showed a permission prompt in this window; 0 or absent: none showing
+  v?: string // the mod version the window runs; absent in windows of 0.5.2 and before
 }
 export type LimitKind = 'five_hour' | 'seven_day'
 export type Limit = { limit: number; limitKind?: LimitKind; limitResetsAt?: string }
@@ -191,4 +192,11 @@ export function statsText(p: Pet, h: History, now: number): string {
     for (const l of h.lives.slice(0, 10)) lines.push(`#${l.n}  ${fmtDate(l.from)} – ${fmtDate(l.to)}  ${nameOf(l.ch)}  ${causeText(l.cause)}  ${L.days(l.days)}`)
   }
   return lines.join('\n')
+}
+
+// Whether version a is newer than b, both "major.minor.patch"; anything else is never newer.
+export function newer(a: string, b: string): boolean {
+  const x = a.split(".").map(Number), y = b.split(".").map(Number)
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (x[i] ?? 0) > (y[i] ?? 0)
+  return false
 }

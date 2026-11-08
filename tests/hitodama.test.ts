@@ -6,6 +6,7 @@ import { CHARS } from '../hooks/lines'
 import { act, advance, applyEvent, finishGame, isHistory, isPet, newEgg, step, turnCost, type Ev, type History, type Pet } from '../hooks/sim'
 import { cells, colorOf, scene, screenRows, type ScreenLook } from '../hooks/sprites'
 import { tuning as T } from '../hooks/tuning'
+import { VERSION } from '../hooks/version'
 import { bar, decide, lastActive, limitOf, paceOf, restFrom, statsText, title, wrapRows, type Ctx, type Win } from '../hooks/view'
 
 const MIN = 60_000, HOUR = 60 * MIN, DAY = 24 * HOUR
@@ -445,7 +446,7 @@ const child = () => { const p = newEgg(T0 - 71 * MIN, 1, 'yokai'); advance(p, T0
 // Each /hd runs one tick, three seconds after the last; a failing one is said after three in a row.
 // timer: the three-second tick runs once per timerTick(), and the animation frame once per frameTick(), instead of at once.
 // blits holds the length of every animation frame sent.
-async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean; timer?: boolean } = {}) {
+async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean; timer?: boolean; writeFails?: boolean } = {}) {
   const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, order: string[] = [], logs: string[] = [], blits: number[] = []
   let now = T0
   const waiting: (() => void)[] = [], frames: (() => void)[] = []
@@ -467,8 +468,11 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
     if (opts.listFails) throw new Error('listing failed')
     return { value: Object.keys(files).filter(n => n.startsWith('seen/')).map(n => ({ name: n.slice(5), kind: 'file', size: 1, mtimeMs: now, isLink: false })) }
   })
-  on('fs.write', (_, e) => { writes[e.path.slice(dir.length)] = e.text; order.push(e.path.slice(dir.length)); return { value: undefined } })
-  on('ui.log', (_, e) => { logs.push(e.text); return { value: undefined } })
+  on('fs.write', (_, e) => {
+    if (opts.writeFails) throw new Error('disk full')
+    writes[e.path.slice(dir.length)] = e.text; order.push(e.path.slice(dir.length)); return { value: undefined }
+  })
+  on('ui.log', (_, e) => { logs.push(e.to === 'debug' ? `debug: ${e.text}` : e.text); return { value: undefined } })
   on('command.register', () => ({ value: { command: 'hd' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -723,9 +727,86 @@ test('a pet file cut off mid-write with no spare copy is left as it is, said onc
   const s = await session($, on, { 'pet.json': '{"v":1,"life":' })
   for (let i = 0; i < 5; i++) await s.hd()
   expect(s.writes['pet.json']).toBeUndefined()
-  expect(s.logs.filter(l => l.includes('pet.json')).length).toBe(1)
+  expect(s.logs).toEqual([tr().unreadable('/h/.claude/hitodama/pet.json')]) // what to do, without a "hitodama:" of its own
 })
 
+test('a tick that keeps failing for another reason goes on trying and says so in the debug log alone', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { writeFails: true })
+  for (let i = 0; i < 5; i++) await s.hd()
+  expect(s.logs.length).toBe(1)
+  expect(s.logs[0]!.startsWith(`debug: ${tr().stuck('').split('(')[0]}`)).toBe(true)
+})
+
+test('a window on an older version than a live one leaves the pet to it, and only its pane says how to restart', async ($, on) => {
+  // The other window has not been used for an hour, so by input alone this one would own the pet.
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()), 'seen/s2.json': JSON.stringify({ ...win, sid: 's2', room: 'astro', alive: T0 + HOUR, v: '99.0.0' }) })
+  await s.hd()
+  await s.hd()
+  expect(s.writes['pet.json']).toBeUndefined()
+  expect(s.logs).toEqual([])
+  const ui = await pane($, 'terminal', 70, 60)
+  expect(all(await ui.drawn()).flatMap(e => [e.children].flat(9)).join(' ')).toContain('99.0.0')
+  await ui.unmount()
+})
+
+test('an outdated window that cannot read a newer pet keeps the last one on its pane, still saying to restart', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
+  await s.hd()
+  // A newer window starts and writes the pet in a form this version does not read, on the same tick.
+  s.files['seen/s2.json'] = JSON.stringify({ ...win, sid: 's2', room: 'astro', alive: T0 + HOUR, v: '99.0.0' })
+  s.files['pet.json'] = '{"v":99,"format":"new"}'
+  for (let i = 0; i < 4; i++) await s.hd()
+  expect(s.logs).toEqual([])
+  const ui = await pane($, 'terminal', 70, 60)
+  expect(all(await ui.drawn()).flatMap(e => [e.children].flat(9)).join(' ')).toContain('99.0.0')
+  await ui.unmount()
+})
+
+// How many times this window writes the pet over three ticks, after two to settle, with these other windows live.
+async function petWrites($: Engine, on: On, others: Partial<Win>[]) {
+  const files: Record<string, string> = { 'pet.json': JSON.stringify(child()) }
+  others.forEach((o, i) => { files[`seen/s${i + 2}.json`] = JSON.stringify({ ...win, sid: `s${i + 2}`, alive: T0 + HOUR, ...o }) })
+  const s = await session($, on, files)
+  await s.hd()
+  await s.hd()
+  const before = s.order.filter(f => f === 'pet.json').length
+  for (let i = 0; i < 3; i++) await s.hd()
+  expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).v).toBe(VERSION)
+  return s.order.filter(f => f === 'pet.json').length - before
+}
+
+// The other window was used last, so by input alone it would own the pet.
+test('a window used last but on an older version leaves the pet to this one', async ($, on) => {
+  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '0.0.1' }])).toBe(3)
+})
+
+test('a window used last that records no version (0.5.2 and before) keeps the pet, as it chooses itself', async ($, on) => {
+  expect(await petWrites($, on, [{ lastInput: T0 + HOUR }])).toBe(0)
+})
+
+// An outdated window and one of 0.5.2, both used after this one; the old one picks the outdated one (first by session
+// id) and so writes nothing: this one must write.
+test('with an outdated window used last and an old one beside it, the newest window still looks after the pet', async ($, on) => {
+  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '0.0.1' }, { lastInput: T0 + HOUR }])).toBe(3)
+})
+
+test('a version that is not plain numbers counts as none, and never reaches the pane', async ($, on) => {
+  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '9.\u001b[31mX\u0007' }])).toBe(0)
+  const ui = await pane($, 'terminal', 70, 60)
+  expect(all(await ui.drawn()).flatMap(e => [e.children].flat(9)).join(' ')).not.toContain('\u001b')
+  await ui.unmount()
+})
+
+test('with no home folder the mod says once what to set, and writes nothing', async ($, on) => {
+  const logs: string[] = [], writes: string[] = []
+  on('session.id', () => ({ value: 's1' }))
+  on('env.get', () => ({ value: undefined }))
+  on('ui.log', (_, e) => { logs.push(e.text); return { value: undefined } })
+  on('fs.write', (_, e) => { writes.push(e.path); return { value: undefined } })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  expect([logs, writes]).toEqual([[tr().noHome], []])
+})
 test('a pet file cut off mid-write gives way to the spare copy, and the pet goes on without a word', async ($, on) => {
   const p = child()
   const s = await session($, on, { 'pet.json': JSON.stringify(p).slice(0, -1), 'pet.prev.json': JSON.stringify(p) })

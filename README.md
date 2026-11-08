@@ -43,6 +43,8 @@ claude plugin install hitodama --marketplace nyxene/hitodama
 
 The pane opens on the next session start. `/hd` opens it any time, `/hd stats` prints the pet's statistics, collection and memorial.
 
+After an update, restart every open window (`/exit`, then the `claude --resume` command it prints): a window keeps the version it started with. From 0.5.3 on, one still on an older version than another open window leaves the pet to the newer ones, and its pane says so; windows of 0.5.2 and before cannot tell.
+
 ## Requirements
 
 - Claude Code 2.1.310 or newer (the version CI tests), in a terminal. The screen is drawn only in the terminal; other surfaces show the text and the buttons.
@@ -102,7 +104,7 @@ Hitodama makes no network requests and sends nothing anywhere. What it touches:
 
 - **Files:** reads and writes only `~/.claude/hitodama/`: `pet.json` (the pet, its journal, its statistics with the models, effort levels and token counts, and the session ids whose events it has applied), `history.json` (past lives and seen characters), `pet.prev.json` and `history.prev.json` (spare copies of the two, each written just before it) and `seen/<session>.json` (one small file per session, so sessions can tell who has the pet; mods cannot delete files, so old ones stay until you remove them).
 - **Session data:** the session id (to name its file), the name of the repository or working folder (shown in the pane and in your other sessions), the model name, effort level, context fill percentage, the five-hour usage percentage (or the weekly one when there is no five-hour limit) with its reset time and when it was read, the number of reply tokens, helper and failed tool counts, aborted turns, compactions, when you last typed, and when Claude Code showed a permission prompt (it is told the notice's text, such as the tool's name, and keeps only that one showed). With the `auto` language it also reads Claude Code's `/config` rows and keeps only the language setting. It never reads your prompts, replies, files or transcript.
-- **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either, or when it is not an absolute path, it writes one line saying so to the transcript and does nothing else.
+- **Environment:** reads `HOME` (or `USERPROFILE`) to find your home folder. Without either, or when it is not an absolute path, it writes one line to the transcript saying what to set, and does nothing else.
 - **Processes:** runs `date +%z` once per session (`/bin/date`, then `/usr/bin/date`, then the one on `PATH`, each tried only when the one before gave no offset) to learn your local UTC offset for bedtimes; without it, it takes the offset the runtime reports.
 - **Sessions:** only sessions with a person at the prompt take part; `claude -p` runs and the SDK leave the pet alone.
 - **Notifications:** when the pet calls, throws a tantrum or dies and you have not typed for a minute.
@@ -112,7 +114,7 @@ Hitodama makes no network requests and sends nothing anywhere. What it touches:
 ## Limitations
 
 - Mods run with your permissions. Organizations that allow only managed mods will refuse Hitodama.
-- A damaged `pet.json` or `history.json`, such as a write cut short when a window closes, gives way to its spare copy (`pet.prev.json`, `history.prev.json`), written just before it; the next write puts the file right. It does so without a word: with many windows open it is mostly a read while another window writes, and nothing a window wrote is lost (a broken hand edit is lost, replaced by the spare copy). Only when both copies of the pet are damaged does it stop, with one line after three skipped ticks, instead of replacing it with an egg; fix a file, or delete `pet.json` to start over.
+- A damaged `pet.json` or `history.json`, such as a write cut short when a window closes, gives way to its spare copy (`pet.prev.json`, `history.prev.json`), written just before it; the next write puts the file right. It does so without a word: with many windows open it is mostly a read while another window writes, and nothing a window wrote is lost (a broken hand edit is lost, replaced by the spare copy). Only when both copies of the pet are damaged does it stop instead of replacing it with an egg, and writes one line to the transcript in the pet's language saying what to do: fix the file, or delete `pet.json` to start over. Any other failure goes on retrying every tick and is noted in the debug log only.
 - Switching the active session hands the pet over within one three-second tick; in rare cases the old session writes one more tick.
 - A session where Claude asked for permission shows in the others' panes until the tool call ends, so also while a call you allowed runs; any other tool call ending there, in parallel or in a helper, takes it off early. Claude Code gives mods no event for the moment you allow a call.
 - The interface translations other than English and Russian were written without a native speaker's review. Corrections are welcome as issues.

@@ -22,7 +22,10 @@
       "bump-minor-pre-major": true,
       "initial-version": "0.1.0",
       "exclude-paths": ["docs", ".github", ".claude"],
-      "extra-files": [{ "type": "json", "path": ".claude-plugin/plugin.json", "jsonpath": "$.version" }]
+      "extra-files": [
+        { "type": "json", "path": ".claude-plugin/plugin.json", "jsonpath": "$.version" },
+        { "type": "generic", "path": "hooks/version.ts" }
+      ]
     }
   }
 }
