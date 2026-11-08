@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/nyxene/hitodama/compare/v0.5.0...v0.5.1) (2026-11-08)
+
+
+### Fixed
+
+* a care key that changes nothing stays out of the journal ([#54](https://github.com/nyxene/hitodama/issues/54)) ([5807f1f](https://github.com/nyxene/hitodama/commit/5807f1fb653974ce7d9ee5e70473c5d369b09e91))
+* the backpack is drawn in graphite, apart from the pet's colour ([#53](https://github.com/nyxene/hitodama/issues/53)) ([59ad387](https://github.com/nyxene/hitodama/commit/59ad3877f1ed514cef8417a2964c31ad5cb66850))
+
 ## [0.5.0](https://github.com/nyxene/hitodama/compare/v0.4.0...v0.5.0) (2026-11-07)
 
 
