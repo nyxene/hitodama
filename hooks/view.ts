@@ -3,6 +3,7 @@ import { lang, pad, t as tr, width } from './i18n'
 import { LINES, lineOf, lineName } from './lines'
 import { causeText, nameOf, stageOf, type Ev, type History, type Pet } from './sim'
 import { tuning as T } from './tuning'
+import type { HitodamaView } from '../types'
 
 export type Win = {
   sid: string; room: string; alive: number; lastInput: number; lastActivity: number; typingAt: number
@@ -132,12 +133,14 @@ export function title(p: Pet, now: number): string {
 export function wrapRows(s: string, w: number): number {
   w = Math.max(1, w)
   return s.split('\n').reduce((rows, line) => {
-    let n = 1, x = 0
-    for (const word of line.split(' ')) {
-      const k = width(word)
+    // Leading spaces, an indent, take their columns on the first row.
+    const text = line.trimStart()
+    let n = 1, x = Math.min(line.length - text.length, w)
+    for (const [i, word] of text.split(' ').entries()) {
+      const k = width(word), gap = i > 0 ? 1 : 0
       if (k <= w) {
-        if (x > 0 && x + 1 + k > w) { n += 1; x = 0 }
-        x += (x > 0 ? 1 : 0) + k
+        if (x > 0 && x + gap + k > w) { n += 1; x = 0 }
+        x += (x > 0 ? gap : 0) + k
         continue
       }
       if (x > 0) { n += 1; x = 0 }
@@ -159,40 +162,97 @@ export function bar(label: string, v: number, tag = ''): string {
 const fmtDate = (t: number) => new Date(t).toLocaleDateString(lang(), { day: 'numeric', month: 'short' })
 const top = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]
 
-export function statsText(p: Pet, h: History, now: number): string {
+// The statistics as rows the pane lays out at its width: a text line, the label-value pairs, a collection's names, or
+// the memorial's lives.
+export type StatsRow = HitodamaView['stats'][number]
+
+export function statsRows(p: Pet, h: History, now: number): StatsRow[] {
   const seen = new Set([...h.seen, ...p.path])
   const s = p.stats, L = tr(), S = L.stat
   const model = top(s.models), effort = top(s.efforts)
   const num = (v: number) => v.toLocaleString(lang())
-  // Two label-value pairs per row; widths count terminal columns.
-  const row = (a: string, av: string, b?: string, bv?: string) => (col(a, 17) + (b ? col(av, 8) + col(b, 19) + bv : av)).trimEnd()
-  const lines = [
+  const rows: StatsRow[] = [
     `${nameOf(p.ch).toUpperCase()} · ${lineName(lineOf(p.line))} · ${L.life(p.life)} · ${p.dead ? L.dead_ : L.stage[stageOf(p)]} · ${age(p, now)}`,
     p.path.length ? p.path.map(nameOf).join(' → ') : L.inEggYet,
     '',
-    row(S.cm, num(p.cm), S.dm, num(p.dm)),
-    row(S.weight, `${p.weight} g`, S.disc, `${p.disc}%`),
-    row(S.turns, num(s.turns), S.night, num(s.nightTurns)),
-    row(S.tokens, num(s.tokens)),
-    row(S.meals, num(s.meals), S.snacks, num(s.snacks)),
-    row(S.games, num(s.games), S.agents, num(s.agents)),
-    row(S.compacts, num(s.compacts), S.sick, num(s.sick)),
-    row(S.maxLoad, `${s.maxLoad}%`),
+    // Related figures side by side; the two odd ones share the last row.
+    { pairs: [
+      [S.cm, num(p.cm), S.dm, num(p.dm)],
+      [S.weight, `${p.weight} g`, S.disc, `${p.disc}%`],
+      [S.turns, num(s.turns), S.night, num(s.nightTurns)],
+      [S.meals, num(s.meals), S.snacks, num(s.snacks)],
+      [S.games, num(s.games), S.agents, num(s.agents)],
+      [S.compacts, num(s.compacts), S.sick, num(s.sick)],
+      [S.tokens, num(s.tokens), S.maxLoad, `${s.maxLoad}%`],
+    ] },
   ]
-  if (model) lines.push(L.favModel(model[0], Math.round((model[1] / Math.max(1, s.turns)) * 100), effort?.[0] ?? ''))
+  if (model) rows.push('', L.favModel(model[0], Math.round((model[1] / Math.max(1, s.turns)) * 100), effort?.[0] ?? ''))
   for (const line of Object.values(LINES)) {
     const all = Object.keys(line.chars)
-    lines.push('', L.collection(lineName(line), all.filter(c => seen.has(c)).length, all.length))
-    lines.push(all.map(c => (seen.has(c) ? `● ${nameOf(c)}` : c === line.secret.to ? '○ ???' : `○ ${nameOf(c)}`)).join('  '))
+    rows.push('', L.collection(lineName(line), all.filter(c => seen.has(c)).length, all.length))
+    rows.push({ grid: all.map(c => (seen.has(c) ? `● ${nameOf(c)}` : c === line.secret.to ? '○ ???' : `○ ${nameOf(c)}`)) })
   }
   if (h.lives.length) {
     const best = Math.max(...h.lives.map(l => l.days))
     const avg = Math.round(h.lives.reduce((a, l) => a + l.days, 0) / h.lives.length)
-    lines.push('', L.memorial(L.days(best), L.days(avg)))
-    for (const l of h.lives.slice(0, 10)) lines.push(`#${l.n}  ${fmtDate(l.from)} – ${fmtDate(l.to)}  ${nameOf(l.ch)}  ${causeText(l.cause)}  ${L.days(l.days)}`)
+    rows.push('', L.memorial(L.days(best), L.days(avg)))
+    rows.push({ lives: h.lives.slice(0, 10).map(l => [`#${l.n}`, `${fmtDate(l.from)} – ${fmtDate(l.to)}`, nameOf(l.ch), causeText(l.cause), L.days(l.days)]) })
   }
-  return lines.join('\n')
+  return rows
 }
+
+// A table: each column as wide as its widest cell, columns gap apart; the columns named in right are right-aligned.
+function table(rows: string[][], right: number[], gap = 2): string[] {
+  const ws = rows[0]!.map((_, i) => Math.max(...rows.map(r => width(r[i] ?? ''))))
+  const cell = (c: string, i: number) => (right.includes(i) ? ' '.repeat(ws[i]! - width(c)) + c : pad(c, ws[i]!))
+  return rows.map(r => r.map(cell).join(' '.repeat(gap)).trimEnd())
+}
+
+// A line wider than the pane breaks only between its items (" · ", " → ", two spaces), the next row indented by two,
+// so "3 d" or a name never splits; an item wider than the pane is left for the terminal to wrap.
+function fit(line: string, w: number): string[] {
+  if (width(line) <= w) return [line]
+  const parts = line.split(/( · | → | {2,})/)
+  const out: string[] = []
+  let cur = parts[0]!
+  for (let i = 1; i < parts.length; i += 2) {
+    const next = cur + parts[i] + parts[i + 1]
+    if (width(next) <= w) cur = next
+    else { out.push(cur.trimEnd()); cur = '  ' + parts[i + 1] }
+  }
+  return [...out, cur]
+}
+
+// The statistics laid out for w columns: pairs two to a row when they fit, else one; values right-aligned; a
+// collection in as many columns as fit; the memorial's dates on a row of their own when its table does not fit.
+export function layoutStats(rows: StatsRow[], w: number): string[] {
+  return rows.flatMap(r => {
+    if (typeof r === 'string') return fit(r, w)
+    if ('pairs' in r) {
+      const two = table(r.pairs.map(([a, av, b, bv]) => [a!, av!, '', b!, bv!]), [1, 4])
+      if (two.every(l => width(l) <= w)) return two
+      // One to a row, three columns apart, closer where the pane is narrower.
+      const one = (gap: number) => table(r.pairs.flatMap(([a, av, b, bv]) => [[a!, av!], [b!, bv!]]), [1], gap)
+      // Narrower still, each value goes under its label.
+      return [3, 2, 1].map(one).find(t => t.every(l => width(l) <= w)) ?? r.pairs.flatMap(([a, av, b, bv]) => [a!, `  ${av}`, b!, `  ${bv}`])
+    }
+    if ('grid' in r) {
+      const cell = Math.max(...r.grid.map(width)) + 2, per = Math.max(1, Math.floor((w + 2) / cell)), out: string[] = []
+      for (let i = 0; i < r.grid.length; i += per) out.push(r.grid.slice(i, i + per).map(x => pad(x, cell)).join('').trimEnd())
+      return out
+    }
+    const wide = table(r.lives, [4])
+    if (wide.every(l => width(l) <= w)) return wide
+    const indent = ' '.repeat(Math.max(...r.lives.map(l => width(l[0]!))) + 2)
+    const narrow = table(r.lives.map(([n, , name, cause, days]) => [n!, name!, cause!, days!]), [3]).flatMap((l, i) => [l, indent + r.lives[i]![1]])
+    if (narrow.every(l => width(l) <= w)) return narrow
+    // Narrower still, the cause goes on a row of its own too.
+    return table(r.lives.map(([n, , name, , days]) => [n!, name!, days!]), [2]).flatMap((l, i) => [l, indent + r.lives[i]![1], indent + r.lives[i]![3]])
+  })
+}
+
+// The statistics as text for the chat, laid out for 64 columns.
+export const statsText = (p: Pet, h: History, now: number): string => layoutStats(statsRows(p, h, now), 64).join('\n')
 
 // Whether version a is newer than b, both "major.minor.patch"; anything else is never newer.
 export function newer(a: string, b: string): boolean {
