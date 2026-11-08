@@ -181,8 +181,9 @@ export const register: Register = (on, options) => {
     // When the battery was last asked about, and what this window last wrote of its own file and of the pet, and when.
     let powerCheckedAt = -Infinity, seenWritten = { key: '', at: -Infinity }, petWrittenAt = -Infinity
     const startedAt = await $.clock.now()
-    // What a pet shows: everything but the time it was last lived to, the needs to whole points.
-    const visible = (q: Pet) => JSON.stringify(q, (k, v) => (k === 'at' ? undefined : typeof v === 'number' && !Number.isInteger(v) ? Math.round(v) : v))
+    // What a pet shows: everything but the time it was last lived to and the start of a held call or tantrum, which
+    // moves on every tick while it is held, the needs to whole points.
+    const visible = (q: Pet) => JSON.stringify(q, (k, v) => (k === 'at' || k === 'since' ? undefined : typeof v === 'number' && !Number.isInteger(v) ? Math.round(v) : v))
     let busy = Promise.resolve()
     // The newer version a live window runs while this one runs an older one; the pane says so, the transcript does not.
     let outdated: string | null = null

@@ -203,6 +203,7 @@ test('at the five-hour limit an open call sends no notification on every tick', 
   // Timer ticks, not /hd: /hd counts as typing, and nobody is notified while typing.
   const s = await session($, on, { 'pet.json': JSON.stringify(p), 'seen/s2.json': JSON.stringify(limited) }, { timer: true })
   for (let i = 0; i < 5; i++) await s.timerTick()
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } }) // writes the pet as it is now
   const saved = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
   expect(saved.at).toBeGreaterThan(T0 + 4 * 3000) // the timer ticks ran, not only the one at session start
   expect(saved.call?.reason).toBe('hungry')
@@ -224,23 +225,29 @@ async function focused($: Engine, on: On, sat: number, open: boolean, tantrum = 
   await s.timerTick() // the tick at session start has run by now
   await $.turn.start({ text: '', turnId: 't1' })
   s.files['pet.json'] = JSON.stringify(p)
-  for (let i = 0; i < 5; i++) {
+  const writes = () => s.order.filter(f => f === 'pet.json').length, first = writes()
+  for (let i = 0, seen = first; i < 5; i++) {
     await s.timerTick()
-    s.files['pet.json'] = s.writes['pet.json']! // each tick reads what the last one wrote
+    // Each tick reads what the last one wrote, if it wrote.
+    if (writes() > seen) { s.files['pet.json'] = s.writes['pet.json']!; seen = writes() }
   }
-  return { saved: JSON.parse(s.writes['pet.json'] ?? '{}') as Pet, notified }
+  const held = writes() - first
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } }) // writes the pet as it is now
+  return { saved: JSON.parse(s.writes['pet.json'] ?? '{}') as Pet, notified, held }
 }
 
 test('a call held while Claude works in the pet\'s window sends no notification on every tick', async ($, on) => {
-  const { saved, notified } = await focused($, on, 10, true)
+  const { saved, notified, held } = await focused($, on, 10, true)
   expect(saved.call?.reason).toBe('hungry')
   expect(notified).toBe(0)
+  expect(held).toBeLessThanOrEqual(1) // the held call's clock moves every tick, but the pet is written at its heartbeat
 })
 
 test('a tantrum held while Claude works in the pet\'s window sends no notification on every tick', async ($, on) => {
-  const { saved, notified } = await focused($, on, 80, false, true)
+  const { saved, notified, held } = await focused($, on, 80, false, true)
   expect(saved.tantrum).not.toBeNull()
   expect(notified).toBe(0)
+  expect(held).toBeLessThanOrEqual(1)
 })
 
 test('a starving pet still calls while Claude works in its window, notified once', async ($, on) => {
@@ -448,6 +455,7 @@ const child = () => { const p = newEgg(T0 - 71 * MIN, 1, 'yokai'); advance(p, T0
 // blits holds the length of every animation frame sent.
 async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean; timer?: boolean; writeFails?: boolean; battery?: boolean; paneHidden?: boolean; step?: number } = {}) {
   const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, order: string[] = [], logs: string[] = [], blits: number[] = []
+  const writtenAt: Record<string, number[]> = {} // when each file was written, by the fake clock
   let now = T0
   const waiting: (() => void)[] = [], frames: (() => void)[] = []
   on('clock.now', () => ({ value: (now += opts.step ?? 3000) }))
@@ -474,7 +482,8 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
   })
   on('fs.write', (_, e) => {
     if (opts.writeFails) throw new Error('disk full')
-    writes[e.path.slice(dir.length)] = e.text; order.push(e.path.slice(dir.length)); return { value: undefined }
+    const name = e.path.slice(dir.length)
+    writes[name] = e.text; order.push(name); (writtenAt[name] ??= []).push(now); return { value: undefined }
   })
   on('ui.log', (_, e) => { logs.push(e.to === 'debug' ? `debug: ${e.text}` : e.text); return { value: undefined } })
   on('command.register', () => ({ value: { command: 'hd' } }))
@@ -486,7 +495,7 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
   const settle = () => new Promise<void>(done => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(done, 50))
   const timerTick = async () => { await settle(); waiting.shift()?.(); await settle() }
   const frameTick = async () => { await settle(); frames.shift()?.(); await settle() }
-  return { files, writes, order, logs, blits, hd: () => $.command.run(hd), timerTick, frameTick }
+  return { files, writes, order, writtenAt, logs, blits, hd: () => $.command.run(hd), timerTick, frameTick }
 }
 
 // Usage readings as session.measure brings them.
@@ -707,6 +716,34 @@ test('a window not used lately holds the pet still, draws a frame only when it c
   await s.timerTick()
   for (let i = 0; i < 4; i++) await s.frameTick()
   expect(s.blits.length).toBe(still + 4)
+})
+
+test('a pet held still is drawn once more when its scene changes', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: MIN })
+  for (let i = 0; i < 12; i++) await s.timerTick()
+  for (let i = 0; i < 2; i++) await s.frameTick()
+  const still = s.blits.length
+  s.files['pet.json'] = JSON.stringify({ ...child(), poops: T.needs.dirtyAt }) // it needs cleaning now
+  await s.timerTick()
+  for (let i = 0; i < 4; i++) await s.frameTick()
+  expect(s.blits.length).toBe(still + 1)
+})
+
+// The shortest time between two writes of a file after the first two ticks, when nothing in it changed.
+const shortestGap = (times: number[] = []) => Math.min(...times.slice(2).map((t, i) => t - times[i + 1]!))
+
+test('on battery the window file and the pet are written at twice the heartbeats', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: 5000, battery: true })
+  for (let i = 0; i < 24; i++) await s.timerTick()
+  expect((s.writtenAt['seen/s1.json'] ?? []).length).toBeGreaterThan(4)
+  expect(shortestGap(s.writtenAt['seen/s1.json'])).toBeGreaterThanOrEqual(2 * T.power.windowHeartbeatSeconds * 1000)
+  expect(shortestGap(s.writtenAt['pet.json'])).toBeGreaterThanOrEqual(2 * T.power.petHeartbeatSeconds * 1000)
+})
+
+test('plugged in the window file is written at its heartbeat', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: 5000 })
+  for (let i = 0; i < 24; i++) await s.timerTick()
+  expect(shortestGap(s.writtenAt['seen/s1.json'])).toBeLessThan(2 * T.power.windowHeartbeatSeconds * 1000)
 })
 
 test('a pane that is not shown holds the pet still, used or not', async ($, on) => {
