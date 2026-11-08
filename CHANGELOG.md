@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/nyxene/hitodama/compare/v0.5.1...v0.5.2) (2026-11-08)
+
+
+### Fixed
+
+* going on from the spare copy no longer writes a line to the transcript ([#57](https://github.com/nyxene/hitodama/issues/57)) ([3eb77eb](https://github.com/nyxene/hitodama/commit/3eb77ebed91dcebbc1bb0db5f8720b0c2e4d2be2))
+
 ## [0.5.1](https://github.com/nyxene/hitodama/compare/v0.5.0...v0.5.1) (2026-11-08)
 
 
