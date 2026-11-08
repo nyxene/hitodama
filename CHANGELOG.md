@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.3](https://github.com/nyxene/hitodama/compare/v0.5.2...v0.5.3) (2026-11-08)
+
+
+### Fixed
+
+* a window left on an old version leaves the pet to newer ones, and the transcript gets only what needs the owner ([#61](https://github.com/nyxene/hitodama/issues/61)) ([5e4093e](https://github.com/nyxene/hitodama/commit/5e4093eee57527e0cdefb65ea5a50ddcaf7fe131))
+* the statistics are laid out at the pane's width, values right-aligned and nothing split mid-item ([#63](https://github.com/nyxene/hitodama/issues/63)) ([daa2a32](https://github.com/nyxene/hitodama/commit/daa2a32986bb19e55e66d23415e6ead43f16d562))
+
+
+### Changed
+
+* the pet moves only while someone can see it, and windows write only what changed or at a heartbeat ([#65](https://github.com/nyxene/hitodama/issues/65)) ([f025b86](https://github.com/nyxene/hitodama/commit/f025b865dfe57cbbf719adf66093cf33674b0957))
+
 ## [0.5.2](https://github.com/nyxene/hitodama/compare/v0.5.1...v0.5.2) (2026-11-08)
 
 
