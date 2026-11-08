@@ -203,6 +203,7 @@ test('at the five-hour limit an open call sends no notification on every tick', 
   // Timer ticks, not /hd: /hd counts as typing, and nobody is notified while typing.
   const s = await session($, on, { 'pet.json': JSON.stringify(p), 'seen/s2.json': JSON.stringify(limited) }, { timer: true })
   for (let i = 0; i < 5; i++) await s.timerTick()
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } }) // writes the pet as it is now
   const saved = JSON.parse(s.writes['pet.json'] ?? '{}') as Pet
   expect(saved.at).toBeGreaterThan(T0 + 4 * 3000) // the timer ticks ran, not only the one at session start
   expect(saved.call?.reason).toBe('hungry')
@@ -224,23 +225,29 @@ async function focused($: Engine, on: On, sat: number, open: boolean, tantrum = 
   await s.timerTick() // the tick at session start has run by now
   await $.turn.start({ text: '', turnId: 't1' })
   s.files['pet.json'] = JSON.stringify(p)
-  for (let i = 0; i < 5; i++) {
+  const writes = () => s.order.filter(f => f === 'pet.json').length, first = writes()
+  for (let i = 0, seen = first; i < 5; i++) {
     await s.timerTick()
-    s.files['pet.json'] = s.writes['pet.json']! // each tick reads what the last one wrote
+    // Each tick reads what the last one wrote, if it wrote.
+    if (writes() > seen) { s.files['pet.json'] = s.writes['pet.json']!; seen = writes() }
   }
-  return { saved: JSON.parse(s.writes['pet.json'] ?? '{}') as Pet, notified }
+  const held = writes() - first
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } }) // writes the pet as it is now
+  return { saved: JSON.parse(s.writes['pet.json'] ?? '{}') as Pet, notified, held }
 }
 
 test('a call held while Claude works in the pet\'s window sends no notification on every tick', async ($, on) => {
-  const { saved, notified } = await focused($, on, 10, true)
+  const { saved, notified, held } = await focused($, on, 10, true)
   expect(saved.call?.reason).toBe('hungry')
   expect(notified).toBe(0)
+  expect(held).toBeLessThanOrEqual(1) // the held call's clock moves every tick, but the pet is written at its heartbeat
 })
 
 test('a tantrum held while Claude works in the pet\'s window sends no notification on every tick', async ($, on) => {
-  const { saved, notified } = await focused($, on, 80, false, true)
+  const { saved, notified, held } = await focused($, on, 80, false, true)
   expect(saved.tantrum).not.toBeNull()
   expect(notified).toBe(0)
+  expect(held).toBeLessThanOrEqual(1)
 })
 
 test('a starving pet still calls while Claude works in its window, notified once', async ($, on) => {
@@ -446,11 +453,12 @@ const child = () => { const p = newEgg(T0 - 71 * MIN, 1, 'yokai'); advance(p, T0
 // Each /hd runs one tick, three seconds after the last; a failing one is said after three in a row.
 // timer: the three-second tick runs once per timerTick(), and the animation frame once per frameTick(), instead of at once.
 // blits holds the length of every animation frame sent.
-async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean; timer?: boolean; writeFails?: boolean } = {}) {
+async function session($: Engine, on: On, files: Record<string, string>, opts: { listFails?: boolean; timer?: boolean; writeFails?: boolean; battery?: boolean; paneHidden?: boolean; step?: number } = {}) {
   const dir = '/h/.claude/hitodama/', writes: Record<string, string> = {}, order: string[] = [], logs: string[] = [], blits: number[] = []
+  const writtenAt: Record<string, number[]> = {} // when each file was written, by the fake clock
   let now = T0
   const waiting: (() => void)[] = [], frames: (() => void)[] = []
-  on('clock.now', () => ({ value: (now += 3000) }))
+  on('clock.now', () => ({ value: (now += opts.step ?? 3000) }))
   on('clock.every', (_, e) => !opts.timer ? { value: undefined }
     : new Promise(done => { (e.ms === 3000 ? waiting : frames).push(() => done({ value: undefined })) }))
   on('ui.blit', (_, e) => { if ('cells' in e) blits.push(e.cells.length); return { value: {} } })
@@ -460,7 +468,11 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
   on('command.run', () => ({ text: '' }))
   on('session.id', () => ({ value: 's1' }))
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/h' : undefined }))
-  on('process.run', () => ({ value: { stdout: '+0000\n', stderr: '', exitCode: 0, isStdoutTruncated: false, isStderrTruncated: false } }))
+  on('process.run', (_, e) => ({ value: {
+    stdout: e.argv[0]!.endsWith('pmset') ? `Now drawing from '${opts.battery ? 'Battery' : 'AC'} Power'\n` : '+0000\n',
+    stderr: '', exitCode: 0, isStdoutTruncated: false, isStderrTruncated: false,
+  } }))
+  on('ui.panes', () => ({ value: [{ id: 'hitodama', title: 'Hitodama', isShown: !opts.paneHidden, isFocused: false, isPlaced: true }] }))
   on('session.repo', () => ({ value: null }))
   on('fs.exists', (_, e) => ({ value: e.path.slice(dir.length) in files }))
   on('fs.read', (_, e) => ({ value: files[e.path.slice(dir.length)] ?? 'null' }))
@@ -470,7 +482,8 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
   })
   on('fs.write', (_, e) => {
     if (opts.writeFails) throw new Error('disk full')
-    writes[e.path.slice(dir.length)] = e.text; order.push(e.path.slice(dir.length)); return { value: undefined }
+    const name = e.path.slice(dir.length)
+    writes[name] = e.text; order.push(name); (writtenAt[name] ??= []).push(now); return { value: undefined }
   })
   on('ui.log', (_, e) => { logs.push(e.to === 'debug' ? `debug: ${e.text}` : e.text); return { value: undefined } })
   on('command.register', () => ({ value: { command: 'hd' } }))
@@ -482,7 +495,7 @@ async function session($: Engine, on: On, files: Record<string, string>, opts: {
   const settle = () => new Promise<void>(done => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(done, 50))
   const timerTick = async () => { await settle(); waiting.shift()?.(); await settle() }
   const frameTick = async () => { await settle(); frames.shift()?.(); await settle() }
-  return { files, writes, order, logs, blits, hd: () => $.command.run(hd), timerTick, frameTick }
+  return { files, writes, order, writtenAt, logs, blits, hd: () => $.command.run(hd), timerTick, frameTick }
 }
 
 // Usage readings as session.measure brings them.
@@ -691,6 +704,102 @@ test('only the terminal pane sets the size the animation frames are cut to', asy
   expect(s.blits.at(-1)).toBe(wide)
 })
 
+test('a window not used lately holds the pet still, draws a frame only when it changes, and moves again with a turn', async ($, on) => {
+  // A minute passes at every look at the clock, so the window is soon ten minutes unused.
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: MIN })
+  for (let i = 0; i < 12; i++) await s.timerTick()
+  for (let i = 0; i < 2; i++) await s.frameTick()
+  const still = s.blits.length
+  for (let i = 0; i < 4; i++) await s.frameTick()
+  expect(s.blits.length).toBe(still) // nothing new to draw
+  await $.turn.start({ text: '', turnId: 't1' })
+  await s.timerTick()
+  for (let i = 0; i < 4; i++) await s.frameTick()
+  expect(s.blits.length).toBe(still + 4)
+})
+
+test('a pet held still is drawn once more when its scene changes', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: MIN })
+  for (let i = 0; i < 12; i++) await s.timerTick()
+  for (let i = 0; i < 2; i++) await s.frameTick()
+  const still = s.blits.length
+  s.files['pet.json'] = JSON.stringify({ ...child(), poops: T.needs.dirtyAt }) // it needs cleaning now
+  await s.timerTick()
+  for (let i = 0; i < 4; i++) await s.frameTick()
+  expect(s.blits.length).toBe(still + 1)
+})
+
+// The shortest time between two writes of a file after the first two ticks, when nothing in it changed.
+const shortestGap = (times: number[] = []) => Math.min(...times.slice(2).map((t, i) => t - times[i + 1]!))
+
+test('on battery the window file and the pet are written at twice the heartbeats', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: 5000, battery: true })
+  for (let i = 0; i < 24; i++) await s.timerTick()
+  expect((s.writtenAt['seen/s1.json'] ?? []).length).toBeGreaterThan(4)
+  expect((s.writtenAt['pet.json'] ?? []).length).toBeGreaterThan(2)
+  expect(shortestGap(s.writtenAt['seen/s1.json'])).toBeGreaterThanOrEqual(2 * T.power.windowHeartbeatSeconds * 1000)
+  expect(shortestGap(s.writtenAt['pet.json'])).toBeGreaterThanOrEqual(2 * T.power.petHeartbeatSeconds * 1000)
+})
+
+test('plugged in the window file is written at its heartbeat', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: 5000 })
+  for (let i = 0; i < 24; i++) await s.timerTick()
+  expect(shortestGap(s.writtenAt['seen/s1.json'])).toBeLessThan(2 * T.power.windowHeartbeatSeconds * 1000)
+})
+
+test('a pane that is not shown holds the pet still, used or not', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, paneHidden: true })
+  await $.turn.start({ text: '', turnId: 't1' })
+  await s.timerTick()
+  await s.frameTick()
+  const still = s.blits.length
+  for (let i = 0; i < 4; i++) await s.frameTick()
+  expect(s.blits.length).toBe(still)
+})
+
+test('on battery the pet moves at one frame a second', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, battery: true })
+  await s.timerTick()
+  const before = s.blits.length
+  for (let i = 0; i < 8; i++) await s.frameTick()
+  expect(s.blits.length - before).toBe(4)
+})
+
+const writesOf = (s: { order: string[] }, file: string) => s.order.filter(f => f === file).length
+
+test('a window file is written when it changes, not every tick', async ($, on) => {
+  // A tenth of a second at every look at the clock: the heartbeat does not come.
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: 100 })
+  await s.timerTick()
+  const first = writesOf(s, 'seen/s1.json')
+  for (let i = 0; i < 4; i++) await s.timerTick()
+  expect(writesOf(s, 'seen/s1.json')).toBe(first)
+  await $.turn.start({ text: '', turnId: 't1' })
+  await s.timerTick()
+  expect(writesOf(s, 'seen/s1.json')).toBe(first + 1)
+})
+
+test('the pet is written when something it shows changes, not every tick', async ($, on) => {
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: 100 })
+  await s.timerTick()
+  const first = writesOf(s, 'pet.json')
+  for (let i = 0; i < 4; i++) await s.timerTick()
+  expect(writesOf(s, 'pet.json')).toBe(first)
+  await $.turn.start({ text: '', turnId: 't1', agentId: 'a1' }) // a helper: an event the pet takes in
+  await s.timerTick()
+  expect(writesOf(s, 'pet.json')).toBe(first + 1)
+  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).stats.agents).toBe(1)
+})
+
+test('a window file and the pet are written at their heartbeats when nothing changed', async ($, on) => {
+  // A minute at every look at the clock: each tick is past both heartbeats.
+  const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: MIN })
+  await s.timerTick()
+  const seen = writesOf(s, 'seen/s1.json'), pet = writesOf(s, 'pet.json')
+  for (let i = 0; i < 3; i++) await s.timerTick()
+  expect([writesOf(s, 'seen/s1.json') - seen, writesOf(s, 'pet.json') - pet]).toEqual([3, 3])
+})
+
 test('a closing window applies its last events and says it is gone', async ($, on) => {
   const s = await session($, on, { 'pet.json': JSON.stringify(child()) })
   await s.hd()
@@ -762,36 +871,37 @@ test('an outdated window that cannot read a newer pet keeps the last one on its 
   await ui.unmount()
 })
 
-// How many times this window writes the pet over three ticks, after two to settle, with these other windows live.
-async function petWrites($: Engine, on: On, others: Partial<Win>[]) {
+// Whether this window owns the pet, with these other windows live, after two ticks to settle.
+async function owns($: Engine, on: On, others: Partial<Win>[]) {
   const files: Record<string, string> = { 'pet.json': JSON.stringify(child()) }
   others.forEach((o, i) => { files[`seen/s${i + 2}.json`] = JSON.stringify({ ...win, sid: `s${i + 2}`, alive: T0 + HOUR, ...o }) })
   const s = await session($, on, files)
   await s.hd()
   await s.hd()
-  const before = s.order.filter(f => f === 'pet.json').length
-  for (let i = 0; i < 3; i++) await s.hd()
   expect((JSON.parse(s.writes['seen/s1.json'] ?? '{}') as Win).v).toBe(VERSION)
-  return s.order.filter(f => f === 'pet.json').length - before
+  // Closing, a window writes the pet if and only if it owns it, whatever the heartbeat.
+  const before = s.order.filter(f => f === 'pet.json').length
+  await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } })
+  return s.order.filter(f => f === 'pet.json').length > before
 }
 
 // The other window was used last, so by input alone it would own the pet.
 test('a window used last but on an older version leaves the pet to this one', async ($, on) => {
-  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '0.0.1' }])).toBe(3)
+  expect(await owns($, on, [{ lastInput: T0 + HOUR, v: '0.0.1' }])).toBe(true)
 })
 
 test('a window used last that records no version (0.5.2 and before) keeps the pet, as it chooses itself', async ($, on) => {
-  expect(await petWrites($, on, [{ lastInput: T0 + HOUR }])).toBe(0)
+  expect(await owns($, on, [{ lastInput: T0 + HOUR }])).toBe(false)
 })
 
 // An outdated window and one of 0.5.2, both used after this one; the old one picks the outdated one (first by session
 // id) and so writes nothing: this one must write.
 test('with an outdated window used last and an old one beside it, the newest window still looks after the pet', async ($, on) => {
-  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '0.0.1' }, { lastInput: T0 + HOUR }])).toBe(3)
+  expect(await owns($, on, [{ lastInput: T0 + HOUR, v: '0.0.1' }, { lastInput: T0 + HOUR }])).toBe(true)
 })
 
 test('a version that is not plain numbers counts as none, and never reaches the pane', async ($, on) => {
-  expect(await petWrites($, on, [{ lastInput: T0 + HOUR, v: '9.\u001b[31mX\u0007' }])).toBe(0)
+  expect(await owns($, on, [{ lastInput: T0 + HOUR, v: '9.\u001b[31mX\u0007' }])).toBe(false)
   const ui = await pane($, 'terminal', 70, 60)
   expect(all(await ui.drawn()).flatMap(e => [e.children].flat(9)).join(' ')).not.toContain('\u001b')
   await ui.unmount()
