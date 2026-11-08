@@ -736,14 +736,20 @@ test('a pet file cut off mid-write gives way to the spare copy, and the pet goes
   expect(s.logs.filter(l => l.includes('pet.prev.json'))).toEqual([]) // the spare copy holds that text whole
 })
 
-test('a pet file damaged other than cut short gives way to the spare copy, said once', async ($, on) => {
-  const p = child()
-  const s = await session($, on, { 'pet.json': JSON.stringify(p).replace('{', '{,'), 'pet.prev.json': JSON.stringify(p) })
-  await s.hd()
-  await s.hd()
-  expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).ch).toBe(p.ch)
-  expect(s.logs.filter(l => l.includes('pet.prev.json')).length).toBe(1) // at session start and on the ticks
-})
+// The start of an older state: another window wrote a newer one to the spare copy between this window's two reads.
+for (const [how, damage] of [['the start of an older state', (p: Pet) => JSON.stringify({ ...p, at: p.at - 3000 }).slice(0, -9)], ['broken by hand', (p: Pet) => JSON.stringify(p).replace('{', '{,')]] as const) {
+  test(`a pet file that is ${how} gives way to the spare copy without a word, each time`, async ($, on) => {
+    const p = child()
+    const s = await session($, on, { 'pet.json': damage(p), 'pet.prev.json': JSON.stringify(p) })
+    await s.hd()
+    s.files['pet.json'] = JSON.stringify(p)
+    await s.hd() // the file reads again
+    s.files['pet.json'] = damage(p)
+    await s.hd()
+    expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).ch).toBe(p.ch)
+    expect(s.logs.filter(l => l.includes('pet'))).toEqual([])
+  })
+}
 
 test('a history file cut off mid-write gives way to its spare copy, and a death writes both, the spare first', async ($, on) => {
   const h = { lives: [{ n: 1, ch: 'kappa', path: [], from: 0, to: 0, days: 14, cause: 'old' }], seen: ['kappa'] }
@@ -794,18 +800,6 @@ test('a pet file that is gone means a new egg, even with a spare copy there', as
   const s = await session($, on, { 'pet.prev.json': JSON.stringify(p) })
   await s.hd()
   expect((JSON.parse(s.writes['pet.json'] ?? '{}') as Pet).ch).not.toBe(p.ch)
-})
-
-test('going on from the spare copy is said again once the file has read in between', async ($, on) => {
-  const p = child()
-  const damaged = JSON.stringify(p).replace('{', '{,')
-  const s = await session($, on, { 'pet.json': damaged, 'pet.prev.json': JSON.stringify(p) })
-  await s.hd()
-  s.files['pet.json'] = JSON.stringify(p)
-  await s.hd() // the file reads again
-  s.files['pet.json'] = damaged
-  await s.hd()
-  expect(s.logs.filter(l => l.includes('pet.prev.json')).length).toBe(2)
 })
 
 test('a history file that does not read, nor its spare copy, is not written over by a death', async ($, on) => {
