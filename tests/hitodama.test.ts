@@ -736,6 +736,7 @@ test('on battery the window file and the pet are written at twice the heartbeats
   const s = await session($, on, { 'pet.json': JSON.stringify(child()) }, { timer: true, step: 5000, battery: true })
   for (let i = 0; i < 24; i++) await s.timerTick()
   expect((s.writtenAt['seen/s1.json'] ?? []).length).toBeGreaterThan(4)
+  expect((s.writtenAt['pet.json'] ?? []).length).toBeGreaterThan(2)
   expect(shortestGap(s.writtenAt['seen/s1.json'])).toBeGreaterThanOrEqual(2 * T.power.windowHeartbeatSeconds * 1000)
   expect(shortestGap(s.writtenAt['pet.json'])).toBeGreaterThanOrEqual(2 * T.power.petHeartbeatSeconds * 1000)
 })
