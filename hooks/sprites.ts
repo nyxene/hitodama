@@ -32,8 +32,8 @@ const IC = {
   arrowL: ['.#', '##', '.#'],
 }
 // What a pixel is, so the screen can colour it: 0 nothing, 1 the pet (and the egg), from 2 the kinds of things around
-// it. The LCD draws them all alike.
-export const K = { pet: 1, food: 2, dirt: 3, pale: 4, love: 5, care: 6, alert: 7 } as const
+// it, 15 the backpack, after the scenery. The LCD draws them all alike.
+export const K = { pet: 1, food: 2, dirt: 3, pale: 4, love: 5, care: 6, alert: 7, pack: 15 } as const
 const INK: Record<keyof typeof IC, number> = {
   z: K.pale, heart: K.love, rice: K.food, candy: K.food, poop: K.dirt, skull: K.alert, plus: K.care, syringe: K.care,
   drop: K.care, vein: K.alert, clock: K.pale, friend: K.pale, bang: K.alert, bigBang: K.alert, no: K.alert,
@@ -83,8 +83,8 @@ function drawPet(g: Grid, o: Pose): Bounds {
   const cx = Math.round(o.cx), C = ((Object.hasOwn(CH, o.ch) ? CH[o.ch] : undefined) ?? CH.obake!)(cx, Math.round(o.gy), o.sq ?? 0, o.phase)
   if (o.pack) {
     const { w, h } = o.pack, px = Math.round(C.left - w + 3), py = Math.round(C.cy - h / 2 + 1)
-    rect(g, px, py, w, h)
-    for (let i = 1; i < w - 1; i++) g.set(px + i, py + 2, 1)
+    rect(g, px, py, w, h, K.pack)
+    for (let i = 1; i < w - 1; i++) g.set(px + i, py + 2, K.pack)
   }
   shape(g, C.m, C.solid)
   C.deco?.(g)
@@ -257,7 +257,7 @@ export function scene(id: string, o: SceneOpts, t: number): Uint8Array {
         for (let x = 12, i = 0; x < 28; x += 4, i++) { const y = 21 + (i % 2); g.set(x, y, K.pale); g.set(x + 1, y, K.pale) }
         if (t % 2) bmp(g, 29, 10, IC.arrowR, false, INK.arrowR)
         const pk = packFor(load)
-        if (pk) { rect(g, 3, 22 - pk.h, pk.w + 1, pk.h, K.pale); for (let i = 1; i < pk.w; i++) g.set(3 + i, 24 - pk.h, K.pale) }
+        if (pk) { rect(g, 3, 22 - pk.h, pk.w + 1, pk.h, K.pack); for (let i = 1; i < pk.w; i++) g.set(3 + i, 24 - pk.h, K.pack) }
       })
       poops = 0; agents = 0
       break
@@ -305,6 +305,8 @@ const DARK = { day: 0x1b1f27, night: 0x0f1218 }
 const KIND = [0xf2c14e, 0x9b6b43, 0xe8edf5, 0xff7aa2, 0x8fd3ff, 0xff6b5a]
 // Scenery and particles, after the inks: ground, ground dots, star, dim star, cloud, sparkle, heart.
 const S = { ground: 8, dots: 9, star: 10, dim: 11, cloud: 12, spark: 13, heart: 14 } as const
+// The backpack, graphite, so it stands apart from any pet; item colours off leave it as it is.
+const PACK = 0x6e6e78
 const SCENERY = { day: [0x2b3340, 0x252c37, 0, 0, 0x2f3847, 0xfff4c2, 0xff7aa2], night: [0x1c2230, 0x171c27, 0xc9d1e3, 0x59617a, 0, 0xfff4c2, 0xb75b77] }
 // The egg and the ghost a dead pet becomes are not characters of a line.
 const OWN: Record<string, number> = { egg: 0xe9e2cf, obake: 0xcfd8e3 }
@@ -313,12 +315,12 @@ export const colorOf = (ch: string) => (Object.hasOwn(CHARS, ch) ? CHARS[ch]?.co
 const mix = (a: number, b: number, t: number) =>
   [16, 8, 0].reduce((n, sh) => n | (Math.round(((a >> sh) & 255) * (1 - t) + ((b >> sh) & 255) * t) << sh), 0)
 
-// The colour of each ink, and of the scenery after them.
+// The colour of each ink, then of the scenery, then of the backpack.
 function palette(look: ScreenLook, night: boolean): number[] {
-  if (look.lcd) { const P = night ? LCD.night : LCD.day; return [P.bg, ...Array(14).fill(P.px)] }
+  if (look.lcd) { const P = night ? LCD.night : LCD.day; return [P.bg, ...Array(15).fill(P.px)] }
   const bg = night ? DARK.night : DARK.day, dim = (c: number) => (night ? mix(c, bg, 0.35) : c)
   const items = look.kinds ? KIND : KIND.map(() => KIND[0]!)
-  return [bg, dim(look.color), ...items.map(dim), ...(night ? SCENERY.night : SCENERY.day)]
+  return [bg, dim(look.color), ...items.map(dim), ...(night ? SCENERY.night : SCENERY.day), dim(PACK)]
 }
 
 // Scale2x: each pixel becomes four, with corners rounded where neighbours agree.
